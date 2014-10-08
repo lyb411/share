@@ -1,648 +1,649 @@
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-cn">
-<head>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-<title>PHP之验证码识别</title>
-</head>
-<body>
-<a name="top"></a>
+一、思路
+
+碰见一个验证码，如果我们想要识别它，我们需要的是做什么呢？ 
+我们先观察几个验证码............
+
+
+我们用人眼去观察，会很显然的认出验证码所包含的字符，那么人眼的“识别机理”是什么呢？ 
+大概是验证码图片字符的背景的颜色区别吧，试想，如果字符和背景没有颜色区别，我们能够判断验证码吗，很显然不能。
+
+所以，我们就可以从人出发。
+
+先从图片的颜色着手，即图片的RGB信息。
+
+RGB色彩模式是工业界的一种颜色标准，是通过对红(R)、绿(G)、蓝(B)三个颜色通道的变化以及它们相互之间的叠加来得到各式各样的颜色的，RGB即是代表红、绿、蓝三个通道的颜色，这个标准几乎包括了人类视力所能感知的所有颜色，是目前运用最广的颜色系统之一。
+定义函数取得RGB信息
+
+ 1 //代码本来是一个类，现在拆开来写的，有可能有不严谨的地方，大家可以看得懂就好了
+ 2 
+ 3 /*
+ 4  *取得图片路径和图片尺寸
+ 5  */
+ 6 $this->ImagePath = $Image;
+ 7 $this->ImageSize = getimagesize($Image);
+ 8 
+ 9 /*
+10  *获取图像标识符，保存到ImageInfo，只能处理bmp,png,jpg图片
+11  *ImageCreateFromBmp是我自己定义的函数，最后会给出
+12  */
+13 function getInfo(){
+14     $filetype = substr($this->ImagePath,-3);
+15     if($filetype == 'bmp'){
+16         $this->ImageInfo = $this->ImageCreateFromBmp($this->ImagePath);
+17     }elseif($filetype == 'jpg'){
+18         $this->ImageInfo = imagecreatefromjpeg($this->ImagePath);    
+19     }elseif($filetype == 'png'){
+20         $this->ImageInfo = imagecreatefrompng($this->ImagePath);    
+21     }
+22 }
+23 
+24 /*获取图片RGB信息*/
+25 function getRgb(){
+26     $rgbArray = array();
+27     $res = $this->ImageInfo;
+28     $size = $this->ImageSize;
+29     $wid = $size['0'];
+30     $hid = $size['1'];
+31     for($i=0; $i < $hid; ++$i){
+32         for($j=0; $j < $wid; ++$j){
+33             $rgb = imagecolorat($res,$j,$i);
+34             $rgbArray[$i][$j] = imagecolorsforindex($res, $rgb);
+35         }
+36     }
+37     return $rgbArray;
+38 }
+ 
+
+ 
+
+二、二值化
+
+因为人眼可以分别出验证码，所以验证码的RGB信息就会有一定的特点，这时候需要我们观察一下，直接打印RGB数组是不好观察的…………，好多数啊
+
+在php实现验证码的识别(初级篇)中，作者的判断依据是
+
+无论验证数字颜色如何变化，该数字的 RGB 值总有一个值小于 125
+我们先获取他的灰度，再判断
+
+ 1 /*
+ 2  *获取灰度信息
+ 3  */
+ 4 function getGray(){
+ 5     $grayArray = array();
+ 6     $size = $this->ImageSize;
+ 7     $rgbarray = $this->getRgb();
+ 8     $wid = $size['0'];
+ 9     $hid = $size['1'];
+10     for($i=0; $i < $hid; ++$i){
+11         for($j=0; $j < $wid; ++$j){
+12             $grayArray[$i][$j] = (299*$rgbarray[$i][$j]['red']+587*$rgbarray[$i][$j]['green']+144*$rgbarray[$i][$j]['blue'])/1000;
+13         }
+14     }
+15     return $grayArray;
+16 }
+ 
+
+ 
+
+然后我们根据灰度信息，打印图片，注意不是打印灰度信息
+
+ 1 /*根据灰度信息打印图片*/
+ 2 function printByGray(){
+ 3     $size = $this->ImageSize;    
+ 4     $grayArray = $this->getGray();
+ 5     $wid = $size['0'];
+ 6     $hid = $size['1'];
+ 7     for($k=0;$k<25;$k++){
+ 8         echo $k."\n";
+ 9         for($i=0; $i < $hid; ++$i){
+10             for($j=0; $j < $wid; ++$j){
+11                 if($grayArray[$i][$j] < $k*10){
+12                     echo '■';
+13                 }else{
+14                     echo '□';
+15                 }
+16             }
+17             echo "|\n";
+18         }
+19         echo "---------------------------------------------------------------------------------------------------------------\n";
+20     }
+21     
+22 }
+ 
+
+注意到，从$grayArray[$i][$j] < 80就会有显然的输出，我们观察选择了一个恰当的阈值，得到一个0101的数组，我们已经将我们的图片转化为了字符（1）和背景（0），即二值化。
+
+ 1 /*
+ 2  *根据自定义的规则，获取二值化二维数组
+ 3  *@return  图片高*宽的二值数组（0,1）
+ 4  */
+ 5 function getErzhi(){
+ 6     $erzhiArray = array();
+ 7     $size = $this->ImageSize;
+ 8     $grayArray = $this->getGray();
+ 9     $wid = $size['0'];
+10     $hid = $size['1'];
+11     for($i=0; $i < $hid; ++$i){
+12         for($j=0; $j <$wid; ++$j){
+13             if( $grayArray[$i][$j]    < 90 ){
+14                 $erzhiArray[$i][$j]=1;
+15             }else{
+16                 $erzhiArray[$i][$j]=0;
+17             }
+18         }
+19     }
+20     return $erzhiArray;
+21 }
+ 
+
+ 
+
+三、去除噪点
+
+但是我们发现有一些小点影响了我们的判断
 
 
 
+我们可以注意到这些事干扰噪点，但是如果我们是机器的话，我们如何判断这些点是否是字符呢？
+
+ 
+
+所以接下来，我们需要将这些字符去除。
+
+我们判断，如果一个黑点的上下左右的八个点全部是白，我们就认为它是噪点，并予以清除，赋为白
+
+ 1 /*
+ 2  *二值化图片降噪
+ 3  *@param $erzhiArray二值化数组
+ 4  */
+ 5 function reduceZao($erzhiArray){
+ 6     $data = $erzhiArray;
+ 7     $gao = count($erzhiArray);
+ 8     $chang = count($erzhiArray['0']);
+ 9 
+10     $jiangzaoErzhiArray = array();
+11 
+12     for($i=0;$i<$gao;$i++){
+13         for($j=0;$j<$chang;$j++){
+14             $num = 0;  
+15             if($data[$i][$j] == 1)  
+16             {
+17                 // 上  
+18                 if(isset($data[$i-1][$j])){  
+19                     $num = $num + $data[$i-1][$j];  
+20                 }  
+21                 // 下  
+22                 if(isset($data[$i+1][$j])){  
+23                     $num = $num + $data[$i+1][$j];  
+24                 }  
+25                 // 左  
+26                 if(isset($data[$i][$j-1])){  
+27                     $num = $num + $data[$i][$j-1];  
+28                 }  
+29                 // 右  
+30                 if(isset($data[$i][$j+1])){  
+31                     $num = $num + $data[$i][$j+1];  
+32                 }  
+33                 // 上左  
+34                 if(isset($data[$i-1][$j-1])){  
+35                     $num = $num + $data[$i-1][$j-1];  
+36                 }  
+37                 // 上右  
+38                 if(isset($data[$i-1][$j+1])){  
+39                     $num = $num + $data[$i-1][$j+1];  
+40                 }  
+41                 // 下左  
+42                 if(isset($data[$i+1][$j-1])){  
+43                     $num = $num + $data[$i+1][$j-1];  
+44                 }  
+45                 // 下右  
+46                 if(isset($data[$i+1][$j+1])){  
+47                     $num = $num + $data[$i+1][$j+1];  
+48                 }  
+49             }
+50 
+51                 if($num < 1){  
+52                     $jiangzaoErzhiArray[$i][$j] = 0;  
+53                 }else{
+54                     $jiangzaoErzhiArray[$i][$j] = 1;  
+55                 }
+56         }
+57     }
+58     return $jiangzaoErzhiArray;    
+59 
+60 }
 
 
-		
-	</div><!--end: blogTitle 博客的标题和副标题 -->
-	<div id="navigator">
-		
+ 
 
-		<div class="blogStats">
-			
-			
-<!--done-->
-随笔- 2&nbsp;
-文章- 0&nbsp;
-评论- 2&nbsp;
+ 
 
-			
-		</div><!--end: blogStats -->
-	</div>
-</div>
+我们发现噪点消失了。
 
-<div id="main">
-	<div id="mainContent">
-	<div class="forFlow">
-		
+ 
 
-<!--done-->
-<div id="topics">
-	<div class = "post">
-		<h1 class = "postTitle">
-			<a id="cb_post_title_url" class="postTitle2" href="#">PHP之验证码识别</a>
-		</h1>
-		<div class="clear"></div>
-		<div class="postBody">
-			<div id="cnblogs_post_body"><p><span style="font-family: 'Microsoft YaHei';"></span></p>
-<p>首先推荐几篇有关验证码识别的文章,觉得不错</p>
-<p><a href="#">php实现验证码的识别(初级篇)</a></p>
-<p><a href="#">关于bp神经网格识别验证码</a></p>
-<p><span style="font-size: x-large;"><strong>一、思路</strong></span></p>
-<p>碰见一个验证码，如果我们想要识别它，我们需要的是做什么呢？ <br />我们先观察几个验证码............ </p>
-<p><img src="http://images.cnitblog.com/i/637236/201408/041153208503171.jpg" alt="" /><img src="http://images.cnitblog.com/i/637236/201408/041153337251138.png" alt="" /><img src="http://images.cnitblog.com/i/637236/201408/041153380069910.jpg" alt="" /><br />我们用人眼去观察，会很显然的认出验证码所包含的字符，那么人眼的&ldquo;识别机理&rdquo;是什么呢？ 
-<br />大概是验证码图片字符的背景的颜色区别吧，试想，如果字符和背景没有颜色区别，我们能够判断验证码吗，很显然不能。</p>
-<p>所以，我们就可以从人出发。</p>
-<p>先从图片的颜色着手，即图片的RGB信息。</p>
-<pre class="brush: csharp; auto-links: true; collapse: false; first-line: 1; gutter: true; html-script: false; light: false; ruler: false; smart-tabs: true; tab-size: 4; toolbar: true;">RGB色彩模式是工业界的一种颜色标准，是通过对红(R)、绿(G)、蓝(B)三个颜色通道的变化以及它们相互之间的叠加来得到各式各样的颜色的，RGB即是代表红、绿、蓝三个通道的颜色，这个标准几乎包括了人类视力所能感知的所有颜色，是目前运用最广的颜色系统之一。</pre>
-<p>定义函数取得RGB信息</p>
-<div class="cnblogs_code">
-<pre><span style="color: #008080;"> 1</span> <span style="color: #008000;">//</span><span style="color: #008000;">代码本来是一个类，现在拆开来写的，有可能有不严谨的地方，大家可以看得懂就好了</span>
-<span style="color: #008080;"> 2</span> 
-<span style="color: #008080;"> 3</span> <span style="color: #008000;">/*</span>
-<span style="color: #008080;"> 4</span> <span style="color: #008000;"> *取得图片路径和图片尺寸
-</span><span style="color: #008080;"> 5</span>  <span style="color: #008000;">*/</span>
-<span style="color: #008080;"> 6</span> <span style="color: #800080;">$this</span>-&gt;ImagePath = <span style="color: #800080;">$Image</span><span style="color: #000000;">;
-</span><span style="color: #008080;"> 7</span> <span style="color: #800080;">$this</span>-&gt;ImageSize = <span style="color: #008080;">getimagesize</span>(<span style="color: #800080;">$Image</span><span style="color: #000000;">);
-</span><span style="color: #008080;"> 8</span> 
-<span style="color: #008080;"> 9</span> <span style="color: #008000;">/*</span>
-<span style="color: #008080;">10</span> <span style="color: #008000;"> *获取图像标识符，保存到ImageInfo，只能处理bmp,png,jpg图片
-</span><span style="color: #008080;">11</span> <span style="color: #008000;"> *ImageCreateFromBmp是我自己定义的函数，最后会给出
-</span><span style="color: #008080;">12</span>  <span style="color: #008000;">*/</span>
-<span style="color: #008080;">13</span> <span style="color: #0000ff;">function</span><span style="color: #000000;"> getInfo(){
-</span><span style="color: #008080;">14</span>     <span style="color: #800080;">$filetype</span> = <span style="color: #008080;">substr</span>(<span style="color: #800080;">$this</span>-&gt;ImagePath,-3<span style="color: #000000;">);
-</span><span style="color: #008080;">15</span>     <span style="color: #0000ff;">if</span>(<span style="color: #800080;">$filetype</span> == 'bmp'<span style="color: #000000;">){
-</span><span style="color: #008080;">16</span>         <span style="color: #800080;">$this</span>-&gt;ImageInfo = <span style="color: #800080;">$this</span>-&gt;ImageCreateFromBmp(<span style="color: #800080;">$this</span>-&gt;<span style="color: #000000;">ImagePath);
-</span><span style="color: #008080;">17</span>     }<span style="color: #0000ff;">elseif</span>(<span style="color: #800080;">$filetype</span> == 'jpg'<span style="color: #000000;">){
-</span><span style="color: #008080;">18</span>         <span style="color: #800080;">$this</span>-&gt;ImageInfo = imagecreatefromjpeg(<span style="color: #800080;">$this</span>-&gt;<span style="color: #000000;">ImagePath);    
-</span><span style="color: #008080;">19</span>     }<span style="color: #0000ff;">elseif</span>(<span style="color: #800080;">$filetype</span> == 'png'<span style="color: #000000;">){
-</span><span style="color: #008080;">20</span>         <span style="color: #800080;">$this</span>-&gt;ImageInfo = imagecreatefrompng(<span style="color: #800080;">$this</span>-&gt;<span style="color: #000000;">ImagePath);    
-</span><span style="color: #008080;">21</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">22</span> <span style="color: #000000;">}
-</span><span style="color: #008080;">23</span> 
-<span style="color: #008080;">24</span> <span style="color: #008000;">/*</span><span style="color: #008000;">获取图片RGB信息</span><span style="color: #008000;">*/</span>
-<span style="color: #008080;">25</span> <span style="color: #0000ff;">function</span><span style="color: #000000;"> getRgb(){
-</span><span style="color: #008080;">26</span>     <span style="color: #800080;">$rgbArray</span> = <span style="color: #0000ff;">array</span><span style="color: #000000;">();
-</span><span style="color: #008080;">27</span>     <span style="color: #800080;">$res</span> = <span style="color: #800080;">$this</span>-&gt;<span style="color: #000000;">ImageInfo;
-</span><span style="color: #008080;">28</span>     <span style="color: #800080;">$size</span> = <span style="color: #800080;">$this</span>-&gt;<span style="color: #000000;">ImageSize;
-</span><span style="color: #008080;">29</span>     <span style="color: #800080;">$wid</span> = <span style="color: #800080;">$size</span>['0'<span style="color: #000000;">];
-</span><span style="color: #008080;">30</span>     <span style="color: #800080;">$hid</span> = <span style="color: #800080;">$size</span>['1'<span style="color: #000000;">];
-</span><span style="color: #008080;">31</span>     <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$i</span>=0; <span style="color: #800080;">$i</span> &lt; <span style="color: #800080;">$hid</span>; ++<span style="color: #800080;">$i</span><span style="color: #000000;">){
-</span><span style="color: #008080;">32</span>         <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$j</span>=0; <span style="color: #800080;">$j</span> &lt; <span style="color: #800080;">$wid</span>; ++<span style="color: #800080;">$j</span><span style="color: #000000;">){
-</span><span style="color: #008080;">33</span>             <span style="color: #800080;">$rgb</span> = imagecolorat(<span style="color: #800080;">$res</span>,<span style="color: #800080;">$j</span>,<span style="color: #800080;">$i</span><span style="color: #000000;">);
-</span><span style="color: #008080;">34</span>             <span style="color: #800080;">$rgbArray</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>] = imagecolorsforindex(<span style="color: #800080;">$res</span>, <span style="color: #800080;">$rgb</span><span style="color: #000000;">);
-</span><span style="color: #008080;">35</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">36</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">37</span>     <span style="color: #0000ff;">return</span> <span style="color: #800080;">$rgbArray</span><span style="color: #000000;">;
-</span><span style="color: #008080;">38</span> }</pre>
-</div>
-<p>&nbsp;</p>
-<p>&nbsp;</p>
-<p><strong><span style="font-size: x-large;">二、二值化</span></strong></p>
-<p>因为人眼可以分别出验证码，所以验证码的RGB信息就会有一定的特点，这时候需要我们观察一下，直接打印RGB数组是不好观察的&hellip;&hellip;&hellip;&hellip;，好多数啊</p>
-<p>在<a href="http://blog.csdn.net/ugg/article/details/3953137">php实现验证码的识别(初级篇)</a>中，作者的判断依据是</p>
-<pre class="brush: csharp; auto-links: true; collapse: false; first-line: 1; gutter: true; html-script: false; light: false; ruler: false; smart-tabs: true; tab-size: 4; toolbar: true;">无论验证数字颜色如何变化，该数字的 RGB 值总有一个值小于 125</pre>
-<p>我们先获取他的灰度，再判断</p>
-<div class="cnblogs_code">
-<pre><span style="color: #008080;"> 1</span> <span style="color: #008000;">/*</span>
-<span style="color: #008080;"> 2</span> <span style="color: #008000;"> *获取灰度信息
-</span><span style="color: #008080;"> 3</span>  <span style="color: #008000;">*/</span>
-<span style="color: #008080;"> 4</span> <span style="color: #0000ff;">function</span><span style="color: #000000;"> getGray(){
-</span><span style="color: #008080;"> 5</span>     <span style="color: #800080;">$grayArray</span> = <span style="color: #0000ff;">array</span><span style="color: #000000;">();
-</span><span style="color: #008080;"> 6</span>     <span style="color: #800080;">$size</span> = <span style="color: #800080;">$this</span>-&gt;<span style="color: #000000;">ImageSize;
-</span><span style="color: #008080;"> 7</span>     <span style="color: #800080;">$rgbarray</span> = <span style="color: #800080;">$this</span>-&gt;<span style="color: #000000;">getRgb();
-</span><span style="color: #008080;"> 8</span>     <span style="color: #800080;">$wid</span> = <span style="color: #800080;">$size</span>['0'<span style="color: #000000;">];
-</span><span style="color: #008080;"> 9</span>     <span style="color: #800080;">$hid</span> = <span style="color: #800080;">$size</span>['1'<span style="color: #000000;">];
-</span><span style="color: #008080;">10</span>     <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$i</span>=0; <span style="color: #800080;">$i</span> &lt; <span style="color: #800080;">$hid</span>; ++<span style="color: #800080;">$i</span><span style="color: #000000;">){
-</span><span style="color: #008080;">11</span>         <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$j</span>=0; <span style="color: #800080;">$j</span> &lt; <span style="color: #800080;">$wid</span>; ++<span style="color: #800080;">$j</span><span style="color: #000000;">){
-</span><span style="color: #008080;">12</span>             <span style="color: #800080;">$grayArray</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>] = (299*<span style="color: #800080;">$rgbarray</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>]['red']+587*<span style="color: #800080;">$rgbarray</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>]['green']+144*<span style="color: #800080;">$rgbarray</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>]['blue'])/1000<span style="color: #000000;">;
-</span><span style="color: #008080;">13</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">14</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">15</span>     <span style="color: #0000ff;">return</span> <span style="color: #800080;">$grayArray</span><span style="color: #000000;">;
-</span><span style="color: #008080;">16</span> }</pre>
-</div>
-<p>&nbsp;</p>
-<p>&nbsp;</p>
-<p>然后我们根据灰度信息，打印图片，注意不是打印灰度信息</p>
-<div class="cnblogs_code">
-<pre><span style="color: #008080;"> 1</span> <span style="color: #008000;">/*</span><span style="color: #008000;">根据灰度信息打印图片</span><span style="color: #008000;">*/</span>
-<span style="color: #008080;"> 2</span> <span style="color: #0000ff;">function</span><span style="color: #000000;"> printByGray(){
-</span><span style="color: #008080;"> 3</span>     <span style="color: #800080;">$size</span> = <span style="color: #800080;">$this</span>-&gt;<span style="color: #000000;">ImageSize;    
-</span><span style="color: #008080;"> 4</span>     <span style="color: #800080;">$grayArray</span> = <span style="color: #800080;">$this</span>-&gt;<span style="color: #000000;">getGray();
-</span><span style="color: #008080;"> 5</span>     <span style="color: #800080;">$wid</span> = <span style="color: #800080;">$size</span>['0'<span style="color: #000000;">];
-</span><span style="color: #008080;"> 6</span>     <span style="color: #800080;">$hid</span> = <span style="color: #800080;">$size</span>['1'<span style="color: #000000;">];
-</span><span style="color: #008080;"> 7</span>     <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$k</span>=0;<span style="color: #800080;">$k</span>&lt;25;<span style="color: #800080;">$k</span>++<span style="color: #000000;">){
-</span><span style="color: #008080;"> 8</span>         <span style="color: #0000ff;">echo</span> <span style="color: #800080;">$k</span>."\n"<span style="color: #000000;">;
-</span><span style="color: #008080;"> 9</span>         <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$i</span>=0; <span style="color: #800080;">$i</span> &lt; <span style="color: #800080;">$hid</span>; ++<span style="color: #800080;">$i</span><span style="color: #000000;">){
-</span><span style="color: #008080;">10</span>             <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$j</span>=0; <span style="color: #800080;">$j</span> &lt; <span style="color: #800080;">$wid</span>; ++<span style="color: #800080;">$j</span><span style="color: #000000;">){
-</span><span style="color: #008080;">11</span>                 <span style="color: #0000ff;">if</span>(<span style="color: #800080;">$grayArray</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>] &lt; <span style="color: #800080;">$k</span>*10<span style="color: #000000;">){
-</span><span style="color: #008080;">12</span>                     <span style="color: #0000ff;">echo</span> '■'<span style="color: #000000;">;
-</span><span style="color: #008080;">13</span>                 }<span style="color: #0000ff;">else</span><span style="color: #000000;">{
-</span><span style="color: #008080;">14</span>                     <span style="color: #0000ff;">echo</span> '□'<span style="color: #000000;">;
-</span><span style="color: #008080;">15</span> <span style="color: #000000;">                }
-</span><span style="color: #008080;">16</span> <span style="color: #000000;">            }
-</span><span style="color: #008080;">17</span>             <span style="color: #0000ff;">echo</span> "|\n"<span style="color: #000000;">;
-</span><span style="color: #008080;">18</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">19</span>         <span style="color: #0000ff;">echo</span> "---------------------------------------------------------------------------------------------------------------\n"<span style="color: #000000;">;
-</span><span style="color: #008080;">20</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">21</span>     
-<span style="color: #008080;">22</span> }</pre>
-</div>
-<p>&nbsp;</p>
-<p>注意到，从$grayArray[$i][$j] &lt; 80就会有显然的输出，我们观察选择了一个恰当的阈值，得到一个0101的数组，我们已经将我们的图片转化为了字符（1）和背景（0），即二值化。</p>
-<div class="cnblogs_code">
-<pre><span style="color: #008080;"> 1</span> <span style="color: #008000;">/*</span>
-<span style="color: #008080;"> 2</span> <span style="color: #008000;"> *根据自定义的规则，获取二值化二维数组
-</span><span style="color: #008080;"> 3</span> <span style="color: #008000;"> *@return  图片高*宽的二值数组（0,1）
-</span><span style="color: #008080;"> 4</span>  <span style="color: #008000;">*/</span>
-<span style="color: #008080;"> 5</span> <span style="color: #0000ff;">function</span><span style="color: #000000;"> getErzhi(){
-</span><span style="color: #008080;"> 6</span>     <span style="color: #800080;">$erzhiArray</span> = <span style="color: #0000ff;">array</span><span style="color: #000000;">();
-</span><span style="color: #008080;"> 7</span>     <span style="color: #800080;">$size</span> = <span style="color: #800080;">$this</span>-&gt;<span style="color: #000000;">ImageSize;
-</span><span style="color: #008080;"> 8</span>     <span style="color: #800080;">$grayArray</span> = <span style="color: #800080;">$this</span>-&gt;<span style="color: #000000;">getGray();
-</span><span style="color: #008080;"> 9</span>     <span style="color: #800080;">$wid</span> = <span style="color: #800080;">$size</span>['0'<span style="color: #000000;">];
-</span><span style="color: #008080;">10</span>     <span style="color: #800080;">$hid</span> = <span style="color: #800080;">$size</span>['1'<span style="color: #000000;">];
-</span><span style="color: #008080;">11</span>     <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$i</span>=0; <span style="color: #800080;">$i</span> &lt; <span style="color: #800080;">$hid</span>; ++<span style="color: #800080;">$i</span><span style="color: #000000;">){
-</span><span style="color: #008080;">12</span>         <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$j</span>=0; <span style="color: #800080;">$j</span> &lt;<span style="color: #800080;">$wid</span>; ++<span style="color: #800080;">$j</span><span style="color: #000000;">){
-</span><span style="color: #008080;">13</span>             <span style="color: #0000ff;">if</span>( <span style="color: #800080;">$grayArray</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>]    &lt; 90<span style="color: #000000;"> ){
-</span><span style="color: #008080;">14</span>                 <span style="color: #800080;">$erzhiArray</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>]=1<span style="color: #000000;">;
-</span><span style="color: #008080;">15</span>             }<span style="color: #0000ff;">else</span><span style="color: #000000;">{
-</span><span style="color: #008080;">16</span>                 <span style="color: #800080;">$erzhiArray</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>]=0<span style="color: #000000;">;
-</span><span style="color: #008080;">17</span> <span style="color: #000000;">            }
-</span><span style="color: #008080;">18</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">19</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">20</span>     <span style="color: #0000ff;">return</span> <span style="color: #800080;">$erzhiArray</span><span style="color: #000000;">;
-</span><span style="color: #008080;">21</span> }</pre>
-</div>
-<p>&nbsp;</p>
-<p>&nbsp;</p>
-<p><strong><span style="font-size: x-large;">三、去除噪点</span></strong></p>
-<p>但是我们发现有一些小点影响了我们的判断</p>
-<p><img src="http://images.cnitblog.com/i/637236/201408/041234058342660.png" alt="" /></p>
-<p>我们可以注意到这些事干扰噪点，但是如果我们是机器的话，我们如何判断这些点是否是字符呢？</p>
-<p>&nbsp;</p>
-<p>所以接下来，我们需要将这些字符去除。</p>
-<p>我们判断，如果一个黑点的上下左右的八个点全部是白，我们就认为它是噪点，并予以清除，赋为白</p>
-<div class="cnblogs_code">
-<pre><span style="color: #008080;"> 1</span> <span style="color: #008000;">/*</span>
-<span style="color: #008080;"> 2</span> <span style="color: #008000;"> *二值化图片降噪
-</span><span style="color: #008080;"> 3</span> <span style="color: #008000;"> *@param $erzhiArray二值化数组
-</span><span style="color: #008080;"> 4</span>  <span style="color: #008000;">*/</span>
-<span style="color: #008080;"> 5</span> <span style="color: #0000ff;">function</span> reduceZao(<span style="color: #800080;">$erzhiArray</span><span style="color: #000000;">){
-</span><span style="color: #008080;"> 6</span>     <span style="color: #800080;">$data</span> = <span style="color: #800080;">$erzhiArray</span><span style="color: #000000;">;
-</span><span style="color: #008080;"> 7</span>     <span style="color: #800080;">$gao</span> = <span style="color: #008080;">count</span>(<span style="color: #800080;">$erzhiArray</span><span style="color: #000000;">);
-</span><span style="color: #008080;"> 8</span>     <span style="color: #800080;">$chang</span> = <span style="color: #008080;">count</span>(<span style="color: #800080;">$erzhiArray</span>['0'<span style="color: #000000;">]);
-</span><span style="color: #008080;"> 9</span> 
-<span style="color: #008080;">10</span>     <span style="color: #800080;">$jiangzaoErzhiArray</span> = <span style="color: #0000ff;">array</span><span style="color: #000000;">();
-</span><span style="color: #008080;">11</span> 
-<span style="color: #008080;">12</span>     <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$i</span>=0;<span style="color: #800080;">$i</span>&lt;<span style="color: #800080;">$gao</span>;<span style="color: #800080;">$i</span>++<span style="color: #000000;">){
-</span><span style="color: #008080;">13</span>         <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$j</span>=0;<span style="color: #800080;">$j</span>&lt;<span style="color: #800080;">$chang</span>;<span style="color: #800080;">$j</span>++<span style="color: #000000;">){
-</span><span style="color: #008080;">14</span>             <span style="color: #800080;">$num</span> = 0<span style="color: #000000;">;  
-</span><span style="color: #008080;">15</span>             <span style="color: #0000ff;">if</span>(<span style="color: #800080;">$data</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>] == 1<span style="color: #000000;">)  
-</span><span style="color: #008080;">16</span> <span style="color: #000000;">            {
-</span><span style="color: #008080;">17</span>                 <span style="color: #008000;">//</span><span style="color: #008000;"> 上  </span>
-<span style="color: #008080;">18</span>                 <span style="color: #0000ff;">if</span>(<span style="color: #0000ff;">isset</span>(<span style="color: #800080;">$data</span>[<span style="color: #800080;">$i</span>-1][<span style="color: #800080;">$j</span><span style="color: #000000;">])){  
-</span><span style="color: #008080;">19</span>                     <span style="color: #800080;">$num</span> = <span style="color: #800080;">$num</span> + <span style="color: #800080;">$data</span>[<span style="color: #800080;">$i</span>-1][<span style="color: #800080;">$j</span><span style="color: #000000;">];  
-</span><span style="color: #008080;">20</span> <span style="color: #000000;">                }  
-</span><span style="color: #008080;">21</span>                 <span style="color: #008000;">//</span><span style="color: #008000;"> 下  </span>
-<span style="color: #008080;">22</span>                 <span style="color: #0000ff;">if</span>(<span style="color: #0000ff;">isset</span>(<span style="color: #800080;">$data</span>[<span style="color: #800080;">$i</span>+1][<span style="color: #800080;">$j</span><span style="color: #000000;">])){  
-</span><span style="color: #008080;">23</span>                     <span style="color: #800080;">$num</span> = <span style="color: #800080;">$num</span> + <span style="color: #800080;">$data</span>[<span style="color: #800080;">$i</span>+1][<span style="color: #800080;">$j</span><span style="color: #000000;">];  
-</span><span style="color: #008080;">24</span> <span style="color: #000000;">                }  
-</span><span style="color: #008080;">25</span>                 <span style="color: #008000;">//</span><span style="color: #008000;"> 左  </span>
-<span style="color: #008080;">26</span>                 <span style="color: #0000ff;">if</span>(<span style="color: #0000ff;">isset</span>(<span style="color: #800080;">$data</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>-1<span style="color: #000000;">])){  
-</span><span style="color: #008080;">27</span>                     <span style="color: #800080;">$num</span> = <span style="color: #800080;">$num</span> + <span style="color: #800080;">$data</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>-1<span style="color: #000000;">];  
-</span><span style="color: #008080;">28</span> <span style="color: #000000;">                }  
-</span><span style="color: #008080;">29</span>                 <span style="color: #008000;">//</span><span style="color: #008000;"> 右  </span>
-<span style="color: #008080;">30</span>                 <span style="color: #0000ff;">if</span>(<span style="color: #0000ff;">isset</span>(<span style="color: #800080;">$data</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>+1<span style="color: #000000;">])){  
-</span><span style="color: #008080;">31</span>                     <span style="color: #800080;">$num</span> = <span style="color: #800080;">$num</span> + <span style="color: #800080;">$data</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>+1<span style="color: #000000;">];  
-</span><span style="color: #008080;">32</span> <span style="color: #000000;">                }  
-</span><span style="color: #008080;">33</span>                 <span style="color: #008000;">//</span><span style="color: #008000;"> 上左  </span>
-<span style="color: #008080;">34</span>                 <span style="color: #0000ff;">if</span>(<span style="color: #0000ff;">isset</span>(<span style="color: #800080;">$data</span>[<span style="color: #800080;">$i</span>-1][<span style="color: #800080;">$j</span>-1<span style="color: #000000;">])){  
-</span><span style="color: #008080;">35</span>                     <span style="color: #800080;">$num</span> = <span style="color: #800080;">$num</span> + <span style="color: #800080;">$data</span>[<span style="color: #800080;">$i</span>-1][<span style="color: #800080;">$j</span>-1<span style="color: #000000;">];  
-</span><span style="color: #008080;">36</span> <span style="color: #000000;">                }  
-</span><span style="color: #008080;">37</span>                 <span style="color: #008000;">//</span><span style="color: #008000;"> 上右  </span>
-<span style="color: #008080;">38</span>                 <span style="color: #0000ff;">if</span>(<span style="color: #0000ff;">isset</span>(<span style="color: #800080;">$data</span>[<span style="color: #800080;">$i</span>-1][<span style="color: #800080;">$j</span>+1<span style="color: #000000;">])){  
-</span><span style="color: #008080;">39</span>                     <span style="color: #800080;">$num</span> = <span style="color: #800080;">$num</span> + <span style="color: #800080;">$data</span>[<span style="color: #800080;">$i</span>-1][<span style="color: #800080;">$j</span>+1<span style="color: #000000;">];  
-</span><span style="color: #008080;">40</span> <span style="color: #000000;">                }  
-</span><span style="color: #008080;">41</span>                 <span style="color: #008000;">//</span><span style="color: #008000;"> 下左  </span>
-<span style="color: #008080;">42</span>                 <span style="color: #0000ff;">if</span>(<span style="color: #0000ff;">isset</span>(<span style="color: #800080;">$data</span>[<span style="color: #800080;">$i</span>+1][<span style="color: #800080;">$j</span>-1<span style="color: #000000;">])){  
-</span><span style="color: #008080;">43</span>                     <span style="color: #800080;">$num</span> = <span style="color: #800080;">$num</span> + <span style="color: #800080;">$data</span>[<span style="color: #800080;">$i</span>+1][<span style="color: #800080;">$j</span>-1<span style="color: #000000;">];  
-</span><span style="color: #008080;">44</span> <span style="color: #000000;">                }  
-</span><span style="color: #008080;">45</span>                 <span style="color: #008000;">//</span><span style="color: #008000;"> 下右  </span>
-<span style="color: #008080;">46</span>                 <span style="color: #0000ff;">if</span>(<span style="color: #0000ff;">isset</span>(<span style="color: #800080;">$data</span>[<span style="color: #800080;">$i</span>+1][<span style="color: #800080;">$j</span>+1<span style="color: #000000;">])){  
-</span><span style="color: #008080;">47</span>                     <span style="color: #800080;">$num</span> = <span style="color: #800080;">$num</span> + <span style="color: #800080;">$data</span>[<span style="color: #800080;">$i</span>+1][<span style="color: #800080;">$j</span>+1<span style="color: #000000;">];  
-</span><span style="color: #008080;">48</span> <span style="color: #000000;">                }  
-</span><span style="color: #008080;">49</span> <span style="color: #000000;">            }
-</span><span style="color: #008080;">50</span> 
-<span style="color: #008080;">51</span>                 <span style="color: #0000ff;">if</span>(<span style="color: #800080;">$num</span> &lt; 1<span style="color: #000000;">){  
-</span><span style="color: #008080;">52</span>                     <span style="color: #800080;">$jiangzaoErzhiArray</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>] = 0<span style="color: #000000;">;  
-</span><span style="color: #008080;">53</span>                 }<span style="color: #0000ff;">else</span><span style="color: #000000;">{
-</span><span style="color: #008080;">54</span>                     <span style="color: #800080;">$jiangzaoErzhiArray</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>] = 1<span style="color: #000000;">;  
-</span><span style="color: #008080;">55</span> <span style="color: #000000;">                }
-</span><span style="color: #008080;">56</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">57</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">58</span>     <span style="color: #0000ff;">return</span> <span style="color: #800080;">$jiangzaoErzhiArray</span><span style="color: #000000;">;    
-</span><span style="color: #008080;">59</span> 
-<span style="color: #008080;">60</span> }</pre>
-</div>
-<p><img src="http://images.cnitblog.com/i/637236/201408/041233277405089.png" alt="" /></p>
-<p>&nbsp;</p>
-<p><span style="line-height: 1.5;">&nbsp;</span></p>
-<p>我们发现噪点消失了。</p>
-<p>&nbsp;</p>
-<p><span style="font-size: x-large;"><strong>四、分割</strong></span></p>
-<p>这个时候，我们就需要对单一数字字母进行操作了，我们先将数字提取出来。</p>
-<p>有些验证码字符相连，特别难!!!</p>
-<p>我们分别从左到右，从右到左，从上到下，从下到上，进行扫描，去除白点，找到边框。</p>
-<div class="cnblogs_code">
-<pre><span style="color: #008080;"> 1</span> <span style="color: #008000;">/*</span>
-<span style="color: #008080;"> 2</span> <span style="color: #008000;"> *归一化处理,针对一个个的数字,即去除字符周围的白点
-</span><span style="color: #008080;"> 3</span> <span style="color: #008000;"> *@param $singleArray 二值化数组
-</span><span style="color: #008080;"> 4</span>  <span style="color: #008000;">*/</span>
-<span style="color: #008080;"> 5</span> <span style="color: #0000ff;">function</span> getJinsuo(<span style="color: #800080;">$singleArray</span><span style="color: #000000;">){
-</span><span style="color: #008080;"> 6</span>     <span style="color: #800080;">$dianCount</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;"> 7</span>     <span style="color: #800080;">$rearr</span> = <span style="color: #0000ff;">array</span><span style="color: #000000;">();
-</span><span style="color: #008080;"> 8</span>     
-<span style="color: #008080;"> 9</span>     <span style="color: #800080;">$gao</span> = <span style="color: #008080;">count</span>(<span style="color: #800080;">$singleArray</span><span style="color: #000000;">);
-</span><span style="color: #008080;">10</span>     <span style="color: #800080;">$kuan</span> = <span style="color: #008080;">count</span>(<span style="color: #800080;">$singleArray</span>['0'<span style="color: #000000;">]);
-</span><span style="color: #008080;">11</span>     
-<span style="color: #008080;">12</span>     <span style="color: #800080;">$dianCount</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">13</span>     <span style="color: #800080;">$shangKuang</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">14</span>     <span style="color: #800080;">$xiaKuang</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">15</span>     <span style="color: #800080;">$zuoKuang</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">16</span>     <span style="color: #800080;">$youKuang</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">17</span>     <span style="color: #008000;">//</span><span style="color: #008000;">从上到下扫描</span>
-<span style="color: #008080;">18</span>     <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$i</span>=0; <span style="color: #800080;">$i</span> &lt; <span style="color: #800080;">$gao</span>; ++<span style="color: #800080;">$i</span><span style="color: #000000;">){
-</span><span style="color: #008080;">19</span>         <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$j</span>=0; <span style="color: #800080;">$j</span> &lt; <span style="color: #800080;">$kuan</span>; ++<span style="color: #800080;">$j</span><span style="color: #000000;">){
-</span><span style="color: #008080;">20</span>             <span style="color: #0000ff;">if</span>( <span style="color: #800080;">$singleArray</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>] == 1<span style="color: #000000;">){
-</span><span style="color: #008080;">21</span>                 <span style="color: #800080;">$dianCount</span>++<span style="color: #000000;">;
-</span><span style="color: #008080;">22</span> <span style="color: #000000;">            }
-</span><span style="color: #008080;">23</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">24</span>         <span style="color: #0000ff;">if</span>(<span style="color: #800080;">$dianCount</span>&gt;1<span style="color: #000000;">){
-</span><span style="color: #008080;">25</span>             <span style="color: #800080;">$shangKuang</span> = <span style="color: #800080;">$i</span><span style="color: #000000;">;
-</span><span style="color: #008080;">26</span>             <span style="color: #800080;">$dianCount</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">27</span>             <span style="color: #0000ff;">break</span><span style="color: #000000;">;
-</span><span style="color: #008080;">28</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">29</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">30</span>     <span style="color: #008000;">//</span><span style="color: #008000;">从下到上扫描</span>
-<span style="color: #008080;">31</span>     <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$i</span>=<span style="color: #800080;">$gao</span>-1; <span style="color: #800080;">$i</span> &gt; -1; <span style="color: #800080;">$i</span>--<span style="color: #000000;">){
-</span><span style="color: #008080;">32</span>         <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$j</span>=0; <span style="color: #800080;">$j</span> &lt; <span style="color: #800080;">$kuan</span>; ++<span style="color: #800080;">$j</span><span style="color: #000000;">){
-</span><span style="color: #008080;">33</span>             <span style="color: #0000ff;">if</span>( <span style="color: #800080;">$singleArray</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>] == 1<span style="color: #000000;">){
-</span><span style="color: #008080;">34</span>                 <span style="color: #800080;">$dianCount</span>++<span style="color: #000000;">;
-</span><span style="color: #008080;">35</span> <span style="color: #000000;">            }
-</span><span style="color: #008080;">36</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">37</span>         <span style="color: #0000ff;">if</span>(<span style="color: #800080;">$dianCount</span>&gt;1<span style="color: #000000;">){
-</span><span style="color: #008080;">38</span>             <span style="color: #800080;">$xiaKuang</span> = <span style="color: #800080;">$i</span><span style="color: #000000;">;
-</span><span style="color: #008080;">39</span>             <span style="color: #800080;">$dianCount</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">40</span>             <span style="color: #0000ff;">break</span><span style="color: #000000;">;
-</span><span style="color: #008080;">41</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">42</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">43</span>     <span style="color: #008000;">//</span><span style="color: #008000;">从左到右扫描</span>
-<span style="color: #008080;">44</span>     <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$i</span>=0; <span style="color: #800080;">$i</span> &lt; <span style="color: #800080;">$kuan</span>; ++<span style="color: #800080;">$i</span><span style="color: #000000;">){
-</span><span style="color: #008080;">45</span>         <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$j</span>=0; <span style="color: #800080;">$j</span> &lt; <span style="color: #800080;">$gao</span>; ++<span style="color: #800080;">$j</span><span style="color: #000000;">){
-</span><span style="color: #008080;">46</span>             <span style="color: #0000ff;">if</span>( <span style="color: #800080;">$singleArray</span>[<span style="color: #800080;">$j</span>][<span style="color: #800080;">$i</span>] == 1<span style="color: #000000;">){
-</span><span style="color: #008080;">47</span>                 <span style="color: #800080;">$dianCount</span>++<span style="color: #000000;">;
-</span><span style="color: #008080;">48</span> <span style="color: #000000;">            }
-</span><span style="color: #008080;">49</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">50</span>         <span style="color: #0000ff;">if</span>(<span style="color: #800080;">$dianCount</span>&gt;1<span style="color: #000000;">){
-</span><span style="color: #008080;">51</span>             <span style="color: #800080;">$zuoKuang</span> = <span style="color: #800080;">$i</span><span style="color: #000000;">;
-</span><span style="color: #008080;">52</span>             <span style="color: #800080;">$dianCount</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">53</span>             <span style="color: #0000ff;">break</span><span style="color: #000000;">;
-</span><span style="color: #008080;">54</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">55</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">56</span>     <span style="color: #008000;">//</span><span style="color: #008000;">从右到左扫描</span>
-<span style="color: #008080;">57</span>     <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$i</span>=<span style="color: #800080;">$kuan</span>-1; <span style="color: #800080;">$i</span> &gt; -1; --<span style="color: #800080;">$i</span><span style="color: #000000;">){
-</span><span style="color: #008080;">58</span>         <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$j</span>=0; <span style="color: #800080;">$j</span> &lt; <span style="color: #800080;">$gao</span>; ++<span style="color: #800080;">$j</span><span style="color: #000000;">){
-</span><span style="color: #008080;">59</span>             <span style="color: #0000ff;">if</span>( <span style="color: #800080;">$singleArray</span>[<span style="color: #800080;">$j</span>][<span style="color: #800080;">$i</span>] == 1<span style="color: #000000;">){
-</span><span style="color: #008080;">60</span>                 <span style="color: #800080;">$dianCount</span>++<span style="color: #000000;">;
-</span><span style="color: #008080;">61</span> <span style="color: #000000;">            }
-</span><span style="color: #008080;">62</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">63</span>         <span style="color: #0000ff;">if</span>(<span style="color: #800080;">$dianCount</span>&gt;1<span style="color: #000000;">){
-</span><span style="color: #008080;">64</span>             <span style="color: #800080;">$youKuang</span> = <span style="color: #800080;">$i</span><span style="color: #000000;">;
-</span><span style="color: #008080;">65</span>             <span style="color: #800080;">$dianCount</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">66</span>             <span style="color: #0000ff;">break</span><span style="color: #000000;">;
-</span><span style="color: #008080;">67</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">68</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">69</span>     <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$i</span>=0;<span style="color: #800080;">$i</span>&lt;<span style="color: #800080;">$xiaKuang</span>-<span style="color: #800080;">$shangKuang</span>+1;<span style="color: #800080;">$i</span>++<span style="color: #000000;">){
-</span><span style="color: #008080;">70</span>         <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$j</span>=0;<span style="color: #800080;">$j</span>&lt;<span style="color: #800080;">$youKuang</span>-<span style="color: #800080;">$zuoKuang</span>+1;<span style="color: #800080;">$j</span>++<span style="color: #000000;">){
-</span><span style="color: #008080;">71</span>             <span style="color: #800080;">$rearr</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>] = <span style="color: #800080;">$singleArray</span>[<span style="color: #800080;">$shangKuang</span>+<span style="color: #800080;">$i</span>][<span style="color: #800080;">$zuoKuang</span>+<span style="color: #800080;">$j</span><span style="color: #000000;">];
-</span><span style="color: #008080;">72</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">73</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">74</span>     <span style="color: #0000ff;">return</span> <span style="color: #800080;">$rearr</span><span style="color: #000000;">;
-</span><span style="color: #008080;">75</span> }</pre>
-</div>
-<p>&nbsp;</p>
-<p>&nbsp;</p>
-<p>然后从左到右扫描，找到字符的分割</p>
-<p>返回三维数组，每一维就是一个字符。</p>
-<div class="cnblogs_code">
-<pre><span style="color: #008080;"> 1</span> <span style="color: #008000;">/*</span>
-<span style="color: #008080;"> 2</span> <span style="color: #008000;"> *切割成三维数组，每个小数字在一个数组里面
-</span><span style="color: #008080;"> 3</span> <span style="color: #008000;"> *只适用四个数字一起的数组
-</span><span style="color: #008080;"> 4</span> <span style="color: #008000;"> *@param 经过归一化处理的二值化数组
-</span><span style="color: #008080;"> 5</span>  <span style="color: #008000;">*/</span>
-<span style="color: #008080;"> 6</span> <span style="color: #0000ff;">function</span> cutSmall(<span style="color: #800080;">$erzhiArray</span><span style="color: #000000;">){
-</span><span style="color: #008080;"> 7</span>     <span style="color: #800080;">$doubleArray</span> = <span style="color: #0000ff;">array</span><span style="color: #000000;">();
-</span><span style="color: #008080;"> 8</span>     <span style="color: #800080;">$jieZouyou</span> = <span style="color: #0000ff;">array</span><span style="color: #000000;">();
-</span><span style="color: #008080;"> 9</span>     
-<span style="color: #008080;">10</span>     <span style="color: #800080;">$gao</span> = <span style="color: #008080;">count</span>(<span style="color: #800080;">$erzhiArray</span><span style="color: #000000;">);
-</span><span style="color: #008080;">11</span>     <span style="color: #800080;">$kuan</span> = <span style="color: #008080;">count</span>(<span style="color: #800080;">$erzhiArray</span>['0'<span style="color: #000000;">]);
-</span><span style="color: #008080;">12</span>     
-<span style="color: #008080;">13</span>     <span style="color: #800080;">$jie</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">14</span>     <span style="color: #800080;">$s</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">15</span>     <span style="color: #800080;">$jieZouyou</span>[<span style="color: #800080;">$s</span>] = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">16</span>     <span style="color: #800080;">$s</span>++<span style="color: #000000;">;
-</span><span style="color: #008080;">17</span>     <span style="color: #008000;">//</span><span style="color: #008000;">从左到右扫描</span>
-<span style="color: #008080;">18</span>     
-<span style="color: #008080;">19</span>     <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$i</span>=0; <span style="color: #800080;">$i</span> &lt; <span style="color: #800080;">$kuan</span><span style="color: #000000;">;){
-</span><span style="color: #008080;">20</span>         <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$j</span>=0; <span style="color: #800080;">$j</span> &lt; <span style="color: #800080;">$gao</span>; ++<span style="color: #800080;">$j</span><span style="color: #000000;">){
-</span><span style="color: #008080;">21</span>             <span style="color: #800080;">$jie</span> = <span style="color: #800080;">$jie</span> + <span style="color: #800080;">$erzhiArray</span>[<span style="color: #800080;">$j</span>][<span style="color: #800080;">$i</span><span style="color: #000000;">];
-</span><span style="color: #008080;">22</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">23</span>         <span style="color: #008000;">//</span><span style="color: #008000;">如果有一列全部是白，设置$jieZouyou,并且跳过中间空白部分</span>
-<span style="color: #008080;">24</span>         <span style="color: #0000ff;">if</span>(<span style="color: #800080;">$jie</span> == 0<span style="color: #000000;">){
-</span><span style="color: #008080;">25</span>             <span style="color: #800080;">$jieZouyou</span>[<span style="color: #800080;">$s</span>] = <span style="color: #800080;">$i</span>+1<span style="color: #000000;">;
-</span><span style="color: #008080;">26</span>             <span style="color: #0000ff;">do</span><span style="color: #000000;">{
-</span><span style="color: #008080;">27</span>                 <span style="color: #800080;">$n</span> = ++<span style="color: #800080;">$i</span><span style="color: #000000;">;
-</span><span style="color: #008080;">28</span>                 <span style="color: #800080;">$qian</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">29</span>                 <span style="color: #800080;">$hou</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">30</span>                 <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$m</span>=0; <span style="color: #800080;">$m</span> &lt; <span style="color: #800080;">$gao</span>; ++<span style="color: #800080;">$m</span><span style="color: #000000;">){
-</span><span style="color: #008080;">31</span>                     <span style="color: #800080;">$qian</span> = <span style="color: #800080;">$qian</span> + <span style="color: #800080;">$erzhiArray</span>[<span style="color: #800080;">$m</span>][<span style="color: #800080;">$n</span><span style="color: #000000;">];
-</span><span style="color: #008080;">32</span>                     <span style="color: #800080;">$hou</span> = <span style="color: #800080;">$hou</span> + <span style="color: #800080;">$erzhiArray</span>[<span style="color: #800080;">$m</span>][<span style="color: #800080;">$n</span>+1<span style="color: #000000;">];                        
-</span><span style="color: #008080;">33</span> <span style="color: #000000;">                }
-</span><span style="color: #008080;">34</span>                 <span style="color: #800080;">$jieZouyou</span>[<span style="color: #800080;">$s</span>+1] = <span style="color: #800080;">$n</span>+1<span style="color: #000000;">;
-</span><span style="color: #008080;">35</span> <span style="color: #000000;">            }
-</span><span style="color: #008080;">36</span>             <span style="color: #008000;">//</span><span style="color: #008000;">当有两列同时全部为白，说明有间隙，循环，知道间隙没有了</span>
-<span style="color: #008080;">37</span>             <span style="color: #0000ff;">while</span>(<span style="color: #800080;">$qian</span> == 0 &amp;&amp; <span style="color: #800080;">$hou</span> == 0<span style="color: #000000;">);
-</span><span style="color: #008080;">38</span>             <span style="color: #800080;">$s</span>+=2<span style="color: #000000;">;
-</span><span style="color: #008080;">39</span>             <span style="color: #800080;">$i</span>++<span style="color: #000000;">;
-</span><span style="color: #008080;">40</span>         }<span style="color: #0000ff;">else</span><span style="color: #000000;">{
-</span><span style="color: #008080;">41</span>             <span style="color: #800080;">$i</span>++<span style="color: #000000;">;    
-</span><span style="color: #008080;">42</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">43</span>         
-<span style="color: #008080;">44</span>         <span style="color: #800080;">$jie</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">45</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">46</span>     <span style="color: #800080;">$jieZouyou</span>[] = <span style="color: #800080;">$kuan</span><span style="color: #000000;">;
-</span><span style="color: #008080;">47</span>     <span style="color: #008000;">//</span><span style="color: #008000;">极端节点数量，(应该是字符个数)*2</span>
-<span style="color: #008080;">48</span>     <span style="color: #800080;">$jieZouyouCount</span> = <span style="color: #008080;">count</span>(<span style="color: #800080;">$jieZouyou</span><span style="color: #000000;">);
-</span><span style="color: #008080;">49</span>     
-<span style="color: #008080;">50</span>     <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$k</span>=0;<span style="color: #800080;">$k</span>&lt;<span style="color: #800080;">$jieZouyouCount</span>/2;<span style="color: #800080;">$k</span>++<span style="color: #000000;">){
-</span><span style="color: #008080;">51</span>         <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$i</span>=0; <span style="color: #800080;">$i</span> &lt; <span style="color: #800080;">$gao</span>; <span style="color: #800080;">$i</span>++<span style="color: #000000;">){
-</span><span style="color: #008080;">52</span>             <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$j</span>=0; <span style="color: #800080;">$j</span> &lt; <span style="color: #800080;">$jieZouyou</span>[<span style="color: #800080;">$k</span>*2+1]-<span style="color: #800080;">$jieZouyou</span>[<span style="color: #800080;">$k</span>*2]-1; ++<span style="color: #800080;">$j</span><span style="color: #000000;">){
-</span><span style="color: #008080;">53</span>                 <span style="color: #800080;">$doubleArray</span>[<span style="color: #800080;">$k</span>][<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>] = <span style="color: #800080;">$erzhiArray</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>+<span style="color: #800080;">$jieZouyou</span>[<span style="color: #800080;">$k</span>*2<span style="color: #000000;">]];
-</span><span style="color: #008080;">54</span> <span style="color: #000000;">            }
-</span><span style="color: #008080;">55</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">56</span>         
-<span style="color: #008080;">57</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">58</span>     <span style="color: #0000ff;">return</span> <span style="color: #800080;">$doubleArray</span><span style="color: #000000;">;
-</span><span style="color: #008080;">59</span> }</pre>
-</div>
-<p><img src="http://images.cnitblog.com/i/637236/201408/041235160535713.png" alt="" /></p>
-<p>&nbsp;</p>
-<p><span style="font-size: x-large;"><strong>五、倾斜调整</strong></span></p>
-<p>我们发现第三个9有一点倾斜，</p>
-<p>我们需要将倾斜的图片&ldquo;正&rdquo;过来</p>
-<p>人怎么处理的呢，先眼睛观察&ldquo;倾斜了多少度&rdquo;，然后把图片扭过来多少度，并且观察-&gt;负反馈-&gt;大脑传递扭转角度时刻在发生，最后图片就&ldquo;正&rdquo;过来了。</p>
-<p>人是怎么观察&ldquo;倾斜&rdquo;的，以上面的&ldquo;2&rdquo;做例子，可能是右上方（左下方）的黑色比左上方（右下方）的多？</p>
-<p>我们建立X轴正向向下，Y轴向右的直角坐标系</p>
-<p>我们计算每一层的黑点的分布中点坐标，得到一系列离散点，计算这些点所在的直线（线性回归方程的计算，），公式y = b*x+a，</p>
-<p><img src="http://images.cnitblog.com/i/637236/201408/041235266479549.jpg" alt="" /></p>
-<p>竟然有用到这个公式的一天！！！</p>
-<p>大概就是一条倾斜的直线了，通过直线计算直线倾斜角度，然后转这么多的角度，图片应该就&ldquo;正&rdquo;了吧。</p>
-<p>其中a,b的计算如下</p>
-<div class="cnblogs_code">
-<pre><span style="color: #008080;"> 1</span> <span style="color: #008000;">/*</span>
-<span style="color: #008080;"> 2</span> <span style="color: #008000;"> *定义求线性回归A和B的函数
-</span><span style="color: #008080;"> 3</span> <span style="color: #008000;"> *@param $zuobiaoArray坐标的三维数组
-</span><span style="color: #008080;"> 4</span>  <span style="color: #008000;">*/</span>
-<span style="color: #008080;"> 5</span> <span style="color: #0000ff;">function</span> getHuigui(<span style="color: #800080;">$zuobiaoArray</span><span style="color: #000000;">){
-</span><span style="color: #008080;"> 6</span>     <span style="color: #800080;">$y8</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;"> 7</span>     <span style="color: #800080;">$x8</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;"> 8</span>     <span style="color: #800080;">$x2</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;"> 9</span>     <span style="color: #800080;">$xy</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">10</span>     <span style="color: #800080;">$geshu</span> = <span style="color: #008080;">count</span>(<span style="color: #800080;">$zuobiaoArray</span><span style="color: #000000;">);
-</span><span style="color: #008080;">11</span>     <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$i</span>=0;<span style="color: #800080;">$i</span>&lt;<span style="color: #800080;">$geshu</span>;<span style="color: #800080;">$i</span>++<span style="color: #000000;">){
-</span><span style="color: #008080;">12</span>         <span style="color: #800080;">$y8</span> = <span style="color: #800080;">$y8</span>+<span style="color: #800080;">$zuobiaoArray</span>[<span style="color: #800080;">$i</span>]['y'<span style="color: #000000;">];
-</span><span style="color: #008080;">13</span>         <span style="color: #800080;">$x8</span> = <span style="color: #800080;">$x8</span>+<span style="color: #800080;">$zuobiaoArray</span>[<span style="color: #800080;">$i</span>]['x'<span style="color: #000000;">];
-</span><span style="color: #008080;">14</span>         <span style="color: #800080;">$xy</span> = <span style="color: #800080;">$xy</span>+<span style="color: #800080;">$zuobiaoArray</span>[<span style="color: #800080;">$i</span>]['y']*<span style="color: #800080;">$zuobiaoArray</span>[<span style="color: #800080;">$i</span>]['x'<span style="color: #000000;">];
-</span><span style="color: #008080;">15</span>         <span style="color: #800080;">$x2</span> = <span style="color: #800080;">$x2</span> + <span style="color: #800080;">$zuobiaoArray</span>[<span style="color: #800080;">$i</span>]['x']*<span style="color: #800080;">$zuobiaoArray</span>[<span style="color: #800080;">$i</span>]['x'<span style="color: #000000;">];;
-</span><span style="color: #008080;">16</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">17</span>     <span style="color: #800080;">$y8</span> = <span style="color: #800080;">$y8</span>/<span style="color: #800080;">$geshu</span><span style="color: #000000;">;
-</span><span style="color: #008080;">18</span>     <span style="color: #800080;">$x8</span> = <span style="color: #800080;">$x8</span>/<span style="color: #800080;">$geshu</span><span style="color: #000000;">;
-</span><span style="color: #008080;">19</span>     
-<span style="color: #008080;">20</span>     <span style="color: #800080;">$b</span> = (<span style="color: #800080;">$xy</span>-<span style="color: #800080;">$geshu</span>*<span style="color: #800080;">$y8</span>*<span style="color: #800080;">$x8</span>)/(<span style="color: #800080;">$x2</span>-<span style="color: #800080;">$geshu</span>*<span style="color: #800080;">$x8</span>*<span style="color: #800080;">$x8</span><span style="color: #000000;">);
-</span><span style="color: #008080;">21</span>     <span style="color: #800080;">$a</span> = <span style="color: #800080;">$y8</span>-<span style="color: #800080;">$b</span>*<span style="color: #800080;">$x8</span><span style="color: #000000;">;
-</span><span style="color: #008080;">22</span>     <span style="color: #800080;">$re</span>['a'] = <span style="color: #800080;">$a</span><span style="color: #000000;">;
-</span><span style="color: #008080;">23</span>     <span style="color: #800080;">$re</span>['b'] = <span style="color: #800080;">$b</span><span style="color: #000000;">;
-</span><span style="color: #008080;">24</span>     <span style="color: #0000ff;">return</span> <span style="color: #800080;">$re</span><span style="color: #000000;">;
-</span><span style="color: #008080;">25</span>     <span style="color: #008000;">//</span><span style="color: #008000;">y = b * x + a</span>
-<span style="color: #008080;">26</span> }</pre>
-</div>
-<p><span style="line-height: 1.5;">&nbsp;</span></p>
-<p>怎么转角？</p>
-<pre>1、可以直接对图片进行操作，但是发现有比较大的失真，就没有继续了。</pre>
-<pre>2、或者，对黑点白点的坐标进行操作&hellip;&hellip;</pre>
-<p>这就是三角函数了，好长时间不碰三角函数，都差点忘记了。</p>
-<p>定义函数</p>
-<div class="cnblogs_code">
-<pre><span style="color: #008080;"> 1</span> <span style="color: #008000;">/*</span>
-<span style="color: #008080;"> 2</span> <span style="color: #008000;"> *定义转化坐标的函数
-</span><span style="color: #008080;"> 3</span> <span style="color: #008000;"> *@param $x x坐标即$i
-</span><span style="color: #008080;"> 4</span> <span style="color: #008000;"> *@param $y y坐标，即j
-</span><span style="color: #008080;"> 5</span> <span style="color: #008000;"> *@param $b 线性回归方程的b参数 
-</span><span style="color: #008080;"> 6</span>  <span style="color: #008000;">*/</span> 
-<span style="color: #008080;"> 7</span> <span style="color: #0000ff;">function</span> getNewZuobiao(<span style="color: #800080;">$x</span>,<span style="color: #800080;">$y</span>,<span style="color: #800080;">$b</span><span style="color: #000000;">){
-</span><span style="color: #008080;"> 8</span>     <span style="color: #0000ff;">if</span>(<span style="color: #800080;">$x</span> == 0<span style="color: #000000;">){
-</span><span style="color: #008080;"> 9</span>         <span style="color: #0000ff;">if</span>(<span style="color: #800080;">$y</span>&gt;0<span style="color: #000000;">){
-</span><span style="color: #008080;">10</span>             <span style="color: #800080;">$xianJiao</span> = M_PI/2<span style="color: #000000;">;
-</span><span style="color: #008080;">11</span>         }<span style="color: #0000ff;">elseif</span>(<span style="color: #800080;">$y</span>&lt;0<span style="color: #000000;">){
-</span><span style="color: #008080;">12</span>             <span style="color: #800080;">$xianJiao</span> = -M_PI/2<span style="color: #000000;">;
-</span><span style="color: #008080;">13</span>         }<span style="color: #0000ff;">else</span><span style="color: #000000;">{
-</span><span style="color: #008080;">14</span>             <span style="color: #800080;">$p</span>['x'] = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">15</span>             <span style="color: #800080;">$p</span>['y'] = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">16</span>             <span style="color: #0000ff;">return</span> <span style="color: #800080;">$p</span><span style="color: #000000;">;
-</span><span style="color: #008080;">17</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">18</span>     }<span style="color: #0000ff;">else</span><span style="color: #000000;">{
-</span><span style="color: #008080;">19</span>         <span style="color: #800080;">$xianJiao</span> = <span style="color: #008080;">atan</span>(<span style="color: #800080;">$y</span>/<span style="color: #800080;">$x</span><span style="color: #000000;">);    
-</span><span style="color: #008080;">20</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">21</span>     <span style="color: #800080;">$jiao</span> =<span style="color: #800080;">$xianJiao</span>-<span style="color: #008080;">atan</span>(<span style="color: #800080;">$b</span><span style="color: #000000;">);
-</span><span style="color: #008080;">22</span>     <span style="color: #800080;">$chang</span> = <span style="color: #008080;">sqrt</span>(<span style="color: #800080;">$x</span>*<span style="color: #800080;">$x</span>+<span style="color: #800080;">$y</span>*<span style="color: #800080;">$y</span><span style="color: #000000;">);
-</span><span style="color: #008080;">23</span>     <span style="color: #800080;">$p</span>['x'] = <span style="color: #800080;">$chang</span>*<span style="color: #008080;">cos</span>(<span style="color: #800080;">$jiao</span><span style="color: #000000;">);
-</span><span style="color: #008080;">24</span>     <span style="color: #800080;">$p</span>['y'] = <span style="color: #800080;">$chang</span>*<span style="color: #008080;">sin</span>(<span style="color: #800080;">$jiao</span><span style="color: #000000;">);
-</span><span style="color: #008080;">25</span>     <span style="color: #0000ff;">return</span> <span style="color: #800080;">$p</span><span style="color: #000000;">;
-</span><span style="color: #008080;">26</span> }</pre>
-</div>
-<p>&nbsp;</p>
-<p>转角吧</p>
-<p>&nbsp;</p>
-<div class="cnblogs_code">
-<pre><span style="color: #008080;"> 1</span> <span style="color: #008000;">/*</span>
-<span style="color: #008080;"> 2</span> <span style="color: #008000;"> *对【单个】数字的二值化二维数组进行倾斜调整
-</span><span style="color: #008080;"> 3</span> <span style="color: #008000;"> *@param  $singleArray  高*宽的二值数组（0,1）
-</span><span style="color: #008080;"> 4</span>  <span style="color: #008000;">*/</span>
-<span style="color: #008080;"> 5</span> <span style="color: #0000ff;">function</span> singleSlopeAdjust(<span style="color: #800080;">$singleErzhiArray</span><span style="color: #000000;">){
-</span><span style="color: #008080;"> 6</span>     <span style="color: #800080;">$slopeArray</span> = <span style="color: #0000ff;">array</span><span style="color: #000000;">();
-</span><span style="color: #008080;"> 7</span>     <span style="color: #800080;">$gao</span> = <span style="color: #008080;">count</span>(<span style="color: #800080;">$singleErzhiArray</span><span style="color: #000000;">);
-</span><span style="color: #008080;"> 8</span>     <span style="color: #800080;">$chang</span> = <span style="color: #008080;">count</span>(<span style="color: #800080;">$singleErzhiArray</span>['0'<span style="color: #000000;">]);
-</span><span style="color: #008080;"> 9</span>     
-<span style="color: #008080;">10</span>     <span style="color: #008000;">//</span><span style="color: #008000;">初始化$slopeArray</span>
-<span style="color: #008080;">11</span>     <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$i</span>=0;<span style="color: #800080;">$i</span>&lt;<span style="color: #800080;">$gao</span>*4;<span style="color: #800080;">$i</span>++<span style="color: #000000;">){
-</span><span style="color: #008080;">12</span>         <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$j</span>=0;<span style="color: #800080;">$j</span>&lt;<span style="color: #800080;">$chang</span>*4;<span style="color: #800080;">$j</span>++<span style="color: #000000;">){
-</span><span style="color: #008080;">13</span>             <span style="color: #800080;">$slopeArray</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>] = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">14</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">15</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">16</span>     
-<span style="color: #008080;">17</span>     <span style="color: #008000;">//</span><span style="color: #008000;">初始化中心坐标(是数组的下标)</span>
-<span style="color: #008080;">18</span>     <span style="color: #800080;">$centerXfoalt</span> = (<span style="color: #800080;">$gao</span>-1)/2<span style="color: #000000;">;
-</span><span style="color: #008080;">19</span>     <span style="color: #800080;">$centerYfoalt</span> = (<span style="color: #800080;">$chang</span>-1)/2<span style="color: #000000;">;
-</span><span style="color: #008080;">20</span>     <span style="color: #800080;">$centerX</span> = <span style="color: #008080;">ceil</span>(<span style="color: #800080;">$centerXfoalt</span><span style="color: #000000;">);
-</span><span style="color: #008080;">21</span>     <span style="color: #800080;">$centerY</span> = <span style="color: #008080;">ceil</span>(<span style="color: #800080;">$centerYfoalt</span><span style="color: #000000;">);
-</span><span style="color: #008080;">22</span>     
-<span style="color: #008080;">23</span>     <span style="color: #008000;">//</span><span style="color: #008000;">初始化图片倾斜诶角度</span>
-<span style="color: #008080;">24</span>     <span style="color: #008000;">/*</span><span style="color: #008000;">斜率的计算！！！！！，回归方程</span><span style="color: #008000;">*/</span>
-<span style="color: #008080;">25</span>     <span style="color: #008000;">//</span><span style="color: #008000;">从上到下扫描，计算中点，求得一串坐标（$i,$ava）</span>
-<span style="color: #008080;">26</span>     <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$i</span>=0;<span style="color: #800080;">$i</span>&lt;<span style="color: #800080;">$gao</span>;<span style="color: #800080;">$i</span>++<span style="color: #000000;">){
-</span><span style="color: #008080;">27</span>         <span style="color: #800080;">$Num</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">28</span>         <span style="color: #800080;">$Amount</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">29</span>         <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$j</span>=0;<span style="color: #800080;">$j</span>&lt;<span style="color: #800080;">$chang</span>;<span style="color: #800080;">$j</span>++<span style="color: #000000;">){
-</span><span style="color: #008080;">30</span>             <span style="color: #0000ff;">if</span>(<span style="color: #800080;">$singleErzhiArray</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>] == 1<span style="color: #000000;">){
-</span><span style="color: #008080;">31</span>                 <span style="color: #800080;">$Num</span> = <span style="color: #800080;">$Num</span>+<span style="color: #800080;">$j</span><span style="color: #000000;">;
-</span><span style="color: #008080;">32</span>                 <span style="color: #800080;">$Amount</span>++<span style="color: #000000;">;
-</span><span style="color: #008080;">33</span> <span style="color: #000000;">            }
-</span><span style="color: #008080;">34</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">35</span>         <span style="color: #0000ff;">if</span>(<span style="color: #800080;">$Amount</span> == 0<span style="color: #000000;">){
-</span><span style="color: #008080;">36</span>             <span style="color: #800080;">$Ava</span>[<span style="color: #800080;">$i</span>] = <span style="color: #800080;">$chang</span>/2<span style="color: #000000;">;    
-</span><span style="color: #008080;">37</span>         }<span style="color: #0000ff;">else</span><span style="color: #000000;">{
-</span><span style="color: #008080;">38</span>             <span style="color: #800080;">$Ava</span>[<span style="color: #800080;">$i</span>] = <span style="color: #800080;">$Num</span>/<span style="color: #800080;">$Amount</span><span style="color: #000000;">;
-</span><span style="color: #008080;">39</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">40</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">41</span> 
-<span style="color: #008080;">42</span>     
-<span style="color: #008080;">43</span>     <span style="color: #008000;">//</span><span style="color: #008000;">计算线性回归方程的b与a</span>
-<span style="color: #008080;">44</span>     <span style="color: #800080;">$zuo</span> = <span style="color: #0000ff;">array</span><span style="color: #000000;">();
-</span><span style="color: #008080;">45</span>     <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$j</span>=0;<span style="color: #800080;">$j</span>&lt;<span style="color: #008080;">count</span>(<span style="color: #800080;">$Ava</span>);<span style="color: #800080;">$j</span>++<span style="color: #000000;">){
-</span><span style="color: #008080;">46</span>         <span style="color: #800080;">$zuo</span>[<span style="color: #800080;">$j</span>]['x'] = <span style="color: #800080;">$j</span><span style="color: #000000;">;
-</span><span style="color: #008080;">47</span>         <span style="color: #800080;">$zuo</span>[<span style="color: #800080;">$j</span>]['y'] = <span style="color: #800080;">$Ava</span>[<span style="color: #800080;">$j</span><span style="color: #000000;">];
-</span><span style="color: #008080;">48</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">49</span>     <span style="color: #800080;">$res</span> = <span style="color: #800080;">$this</span>-&gt;getHuigui(<span style="color: #800080;">$zuo</span><span style="color: #000000;">);
-</span><span style="color: #008080;">50</span>     <span style="color: #800080;">$zuoB</span> = <span style="color: #800080;">$res</span>['b'<span style="color: #000000;">];
-</span><span style="color: #008080;">51</span> 
-<span style="color: #008080;">52</span>     
-<span style="color: #008080;">53</span>     <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$i</span>=0;<span style="color: #800080;">$i</span>&lt;<span style="color: #800080;">$gao</span>;<span style="color: #800080;">$i</span>++<span style="color: #000000;">){
-</span><span style="color: #008080;">54</span>         <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$j</span>=0;<span style="color: #800080;">$j</span>&lt;<span style="color: #800080;">$chang</span>;<span style="color: #800080;">$j</span>++<span style="color: #000000;">){
-</span><span style="color: #008080;">55</span>             <span style="color: #0000ff;">if</span>(<span style="color: #800080;">$singleErzhiArray</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span>] == 1<span style="color: #000000;">){
-</span><span style="color: #008080;">56</span>                 <span style="color: #800080;">$splodeZuobiao</span> = <span style="color: #800080;">$this</span>-&gt;getNewZuobiao(<span style="color: #800080;">$i</span>,<span style="color: #800080;">$j</span>,<span style="color: #800080;">$zuoB</span><span style="color: #000000;">);
-</span><span style="color: #008080;">57</span>                 <span style="color: #800080;">$splodeX</span> = <span style="color: #800080;">$splodeZuobiao</span>['x'<span style="color: #000000;">];
-</span><span style="color: #008080;">58</span>                 <span style="color: #800080;">$splodeY</span> = <span style="color: #800080;">$splodeZuobiao</span>['y'<span style="color: #000000;">];
-</span><span style="color: #008080;">59</span>                 <span style="color: #800080;">$slopeArray</span>[<span style="color: #800080;">$splodeX</span>+<span style="color: #800080;">$gao</span>][<span style="color: #800080;">$splodeY</span>+<span style="color: #800080;">$chang</span>] = 1<span style="color: #000000;">;
-</span><span style="color: #008080;">60</span> <span style="color: #000000;">            }
-</span><span style="color: #008080;">61</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">62</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">63</span>     
-<span style="color: #008080;">64</span>     <span style="color: #008000;">//</span><span style="color: #008000;">将预处理的数组空白清理</span>
-<span style="color: #008080;">65</span>     <span style="color: #800080;">$slopeArray</span> = <span style="color: #800080;">$this</span>-&gt;getJinsuo(<span style="color: #800080;">$slopeArray</span><span style="color: #000000;">);
-</span><span style="color: #008080;">66</span>     <span style="color: #0000ff;">return</span> <span style="color: #800080;">$slopeArray</span><span style="color: #000000;">;
-</span><span style="color: #008080;">67</span> }</pre>
-</div>
-<p><img src="http://images.cnitblog.com/i/637236/201408/041239270537928.png" alt="" /></p>
-<p>看到正了一些</p>
-<p>&nbsp;</p>
-<p><span style="font-size: x-large;"><strong>六、统一大小</strong></span></p>
-<p>上文中因为各种操作，每个字符大小不一，我们需要统一大小</p>
-<p>&nbsp;</p>
-<p><span style="font-size: x-large;"><strong>七、特征值的建立</strong></span></p>
-<p>有很多方法</p>
-<p>1、逐像素特征提取法 <br />这是一种最简单的特征提取方法。它可以对图像进行逐行逐列的扫描，当遇到黑色像素时取其特征值为1，遇到白色像素时取其特征值为0，这样当扫描结束后就获得一个维数与图像中的像素点的个数相同的特征向量矩阵。 
-<br />这种方法提取的信息量最大，但是它的缺点也很明显，就是适应性不强。</p>
-<p>2、骨架特征提取法 
-<br />两幅图像由于它们的线条的粗细不同，使得两幅图像差别很大，但是将它们的线条进行细化后，统一到相同的宽度，如一个像素宽时，这是两幅图像的差距就不那么明显。利用图形的骨架作为特征来进行数码识别，就使得识别有了一定的适应性。一般使用细化的方法来提取骨架，细化的算法有很多，如Hilditch算法、Rosenfeld算法等。对经过细化的图像利用EveryPixel函数进行处理就可以得到细化后图像的特征向量矩阵。骨架特征提取的方法对于线条粗细不同的数码有一定的适应性，但是图像一旦出现偏移就难以识别。</p>
-<p>3、微结构法 
-<br />微结构法将图像分为几个小块，统计每个小块的像素分布。本文提取出汉字的39个特征，存储在数组f[0]～f[38]中。具体算法可分为四步：</p>
-<p><img src="http://images.cnitblog.com/i/637236/201408/041240404435082.png" alt="" /><img src="http://images.cnitblog.com/i/637236/201408/041240438975671.png" alt="" /><img src="http://images.cnitblog.com/i/637236/201408/041240465378143.png" alt="" /><img src="http://images.cnitblog.com/i/637236/201408/041240499434718.png" alt="" /></p>
-<p>&nbsp;<span style="line-height: 1.5;">步骤一：把字符平均分成9份，如图4.1所示，给每一份编号如图4.2，统计每一份内黑色像素的个数，存储在数字tz[0]～tz[9]中，统计在行方向和列方向上每一份内的黑色像素个数和与之相邻的一份内黑色像素个数的比值作为一个特征，例如：行方向上提取特征f[0]＝tz[1]/ 
-tz[0]，f[1]＝tz[2]/ tz[1]，f[2]＝tz[0]/ tz[2]，&hellip;,f[8]＝tz[6]/ tz[8]；列方向上f[9]＝tz[3]/ 
-tz[0]，f[10]＝tz[6]/ tz[3]，f[11]＝tz[0]/ tz[6]，&hellip;，f[17]＝tz[2]/ tz[8]，共18个特征。</span></p>
-<p>步骤二：把字符横向分成三份，如图4.3所示，统计每一份内的黑色像素个数，每一份内的黑色像素个数与前一份内黑色像素个数的比值作为一个特征，f[18]＝tz[10]/ 
-tz[9]，f[19]＝tz[11]/ tz[10]，f[20]＝tz[9]/ 
-tz[11]；把字符纵向分成三份，如图4.4所示，统计每一份内的黑色像素个数，每一份内的黑色像素个数与前一份内黑色像素个数的比值作为一个特征，f[21]＝tz[13]/ 
-tz[12]，f[22]＝tz[14]/ tz[13]，f[23]＝tz[12]/ tz[14]；共六个特征。</p>
-<p>步骤三：如图4.5，在竖直方向上找出三列，统计在该列中跳变点的个数，即相邻点像素值从0变到255的次数，共三个特征，记为f[24]，f[25]，f[26]；在水平方向上找出三行列，统计在该行中跳变点的个数，即相邻点象素值从0变到255的次数，共三个特征，记为f[27]，f[28]，f[29]。</p>
-<p><img src="http://images.cnitblog.com/i/637236/201408/041241154127865.png" alt="" /></p>
-<p>图4.5</p>
-<p>步骤四：把每一份内黑色象素的个数tz[0]～tz[9]，作为9个特征，记为：f[30]～f[38]。</p>
-<p>这样得到汉字的共39个特征，根据这些特征就可以区分每个车牌汉字，进行识别。</p>
-<p>&nbsp;</p>
-<p>&nbsp;</p>
-<p>我们使用最简单的逐像素特征提取法。</p>
-<p>多多增加数据库，识别率会增加的</p>
-<p>&nbsp;</p>
-<p><span style="font-size: x-large;"><strong>八、识别验证码</strong></span></p>
-<p>对于一个新的验证码，进行上文操作，然后对比数据库就可以了</p>
-<div class="cnblogs_code">
-<pre><span style="color: #008080;"> 1</span> <span style="color: #008000;">/*</span>
-<span style="color: #008080;"> 2</span> <span style="color: #008000;"> *进行匹配
-</span><span style="color: #008080;"> 3</span> <span style="color: #008000;"> *@param  $Image  图片路径
-</span><span style="color: #008080;"> 4</span>  <span style="color: #008000;">*/</span>
-<span style="color: #008080;"> 5</span> <span style="color: #0000ff;">public</span> <span style="color: #0000ff;">function</span> run(<span style="color: #800080;">$Image</span><span style="color: #000000;">){
-</span><span style="color: #008080;"> 6</span>     <span style="color: #800080;">$data</span> = <span style="color: #0000ff;">array</span>('','','',''<span style="color: #000000;">);
-</span><span style="color: #008080;"> 7</span>     <span style="color: #800080;">$result</span>=""<span style="color: #000000;">;
-</span><span style="color: #008080;"> 8</span>     <span style="color: #800080;">$bilu</span> = ''<span style="color: #000000;">;
-</span><span style="color: #008080;"> 9</span>     <span style="color: #800080;">$maxarr</span> = ''<span style="color: #000000;">;
-</span><span style="color: #008080;">10</span>     
-<span style="color: #008080;">11</span>     <span style="color: #008000;">//</span><span style="color: #008000;">提取特征</span>
-<span style="color: #008080;">12</span>     <span style="color: #800080;">$this</span>-&gt;prepare(<span style="color: #800080;">$Image</span><span style="color: #000000;">);
-</span><span style="color: #008080;">13</span>     <span style="color: #800080;">$yuanshi</span> = <span style="color: #800080;">$this</span>-&gt;<span style="color: #000000;">getErzhi();
-</span><span style="color: #008080;">14</span>     <span style="color: #800080;">$yijijiangzao</span> = <span style="color: #800080;">$this</span>-&gt;reduceZao(<span style="color: #800080;">$yuanshi</span><span style="color: #000000;">);
-</span><span style="color: #008080;">15</span>     <span style="color: #800080;">$small</span> = <span style="color: #800080;">$this</span>-&gt;cutSmall(<span style="color: #800080;">$yijijiangzao</span><span style="color: #000000;">);
-</span><span style="color: #008080;">16</span>     <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$k</span>=0;<span style="color: #800080;">$k</span>&lt;4;<span style="color: #800080;">$k</span>++<span style="color: #000000;">){
-</span><span style="color: #008080;">17</span>         <span style="color: #800080;">$tianchong</span> = <span style="color: #800080;">$this</span>-&gt;tianChong(<span style="color: #800080;">$small</span>[<span style="color: #800080;">$k</span><span style="color: #000000;">]);
-</span><span style="color: #008080;">18</span>         <span style="color: #800080;">$tiaozhenjiaodu</span> = <span style="color: #800080;">$this</span>-&gt;singleSlopeAdjust(<span style="color: #800080;">$tianchong</span><span style="color: #000000;">);
-</span><span style="color: #008080;">19</span>         <span style="color: #800080;">$tongyidaxiao</span> = <span style="color: #800080;">$this</span>-&gt;tongyiDaxiao(<span style="color: #800080;">$tiaozhenjiaodu</span><span style="color: #000000;">);
-</span><span style="color: #008080;">20</span>         <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$i</span>=0;<span style="color: #800080;">$i</span>&lt;20;<span style="color: #800080;">$i</span>++<span style="color: #000000;">){
-</span><span style="color: #008080;">21</span>             <span style="color: #0000ff;">for</span>(<span style="color: #800080;">$j</span>=0;<span style="color: #800080;">$j</span>&lt;20;<span style="color: #800080;">$j</span>++<span style="color: #000000;">){
-</span><span style="color: #008080;">22</span>                 <span style="color: #800080;">$data</span>[<span style="color: #800080;">$k</span>] .= <span style="color: #800080;">$tongyidaxiao</span>[<span style="color: #800080;">$i</span>][<span style="color: #800080;">$j</span><span style="color: #000000;">];    
-</span><span style="color: #008080;">23</span> <span style="color: #000000;">            }    
-</span><span style="color: #008080;">24</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">25</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">26</span> 
-<span style="color: #008080;">27</span>     <span style="color: #008000;">//</span><span style="color: #008000;"> 进行关键字匹配</span>
-<span style="color: #008080;">28</span>     <span style="color: #0000ff;">foreach</span>(<span style="color: #800080;">$data</span> <span style="color: #0000ff;">as</span> <span style="color: #800080;">$numKey</span> =&gt; <span style="color: #800080;">$numString</span><span style="color: #000000;">)
-</span><span style="color: #008080;">29</span> <span style="color: #000000;">    {
-</span><span style="color: #008080;">30</span> 
-<span style="color: #008080;">31</span>         <span style="color: #800080;">$max</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">32</span>         <span style="color: #800080;">$num</span> = 0<span style="color: #000000;">;
-</span><span style="color: #008080;">33</span>         <span style="color: #0000ff;">foreach</span>(<span style="color: #800080;">$this</span>-&gt;Keys <span style="color: #0000ff;">as</span> <span style="color: #800080;">$value</span> =&gt; <span style="color: #800080;">$key</span><span style="color: #000000;">)
-</span><span style="color: #008080;">34</span> <span style="color: #000000;">        {
-</span><span style="color: #008080;">35</span>             <span style="color: #008080;">similar_text</span>(<span style="color: #800080;">$value</span>, <span style="color: #800080;">$numString</span>,<span style="color: #800080;">$percent</span><span style="color: #000000;">);
-</span><span style="color: #008080;">36</span>             <span style="color: #0000ff;">if</span>(<span style="color: #800080;">$percent</span> &gt; <span style="color: #800080;">$max</span><span style="color: #000000;">)
-</span><span style="color: #008080;">37</span> <span style="color: #000000;">            {
-</span><span style="color: #008080;">38</span>                 <span style="color: #800080;">$max</span> = <span style="color: #800080;">$percent</span><span style="color: #000000;">;
-</span><span style="color: #008080;">39</span>                 <span style="color: #800080;">$num</span> = <span style="color: #800080;">$key</span><span style="color: #000000;">;
-</span><span style="color: #008080;">40</span>                 <span style="color: #800080;">$zim</span> = <span style="color: #800080;">$value</span><span style="color: #000000;">;
-</span><span style="color: #008080;">41</span> <span style="color: #000000;">            }
-</span><span style="color: #008080;">42</span>             <span style="color: #0000ff;">if</span>(<span style="color: #800080;">$max</span>&gt;95<span style="color: #000000;">){
-</span><span style="color: #008080;">43</span>                 <span style="color: #0000ff;">break</span><span style="color: #000000;">;
-</span><span style="color: #008080;">44</span> <span style="color: #000000;">            }
-</span><span style="color: #008080;">45</span> <span style="color: #000000;">        }
-</span><span style="color: #008080;">46</span>         <span style="color: #800080;">$result</span> .=<span style="color: #800080;">$num</span><span style="color: #000000;">;
-</span><span style="color: #008080;">47</span>         <span style="color: #800080;">$maxarr</span>[] = <span style="color: #800080;">$max</span><span style="color: #000000;">;
-</span><span style="color: #008080;">48</span> <span style="color: #000000;">    }
-</span><span style="color: #008080;">49</span>     <span style="color: #008000;">//</span><span style="color: #008000;"> 查找最佳匹配数字</span>
-<span style="color: #008080;">50</span>     <span style="color: #800080;">$re</span> = <span style="color: #800080;">$maxarr</span><span style="color: #000000;">;
-</span><span style="color: #008080;">51</span>     <span style="color: #800080;">$re</span>[] = <span style="color: #800080;">$result</span><span style="color: #000000;">;
-</span><span style="color: #008080;">52</span>     <span style="color: #0000ff;">return</span> <span style="color: #800080;">$re</span><span style="color: #000000;">;
-</span><span style="color: #008080;">53</span>     <span style="color: #008000;">//</span><span style="color: #008000;">return $result.'|max|一:'.$maxarr['0'].'|二:'.$maxarr['1'].'|三:'.$maxarr['2'].'|四:'.$maxarr['3'];</span>
-<span style="color: #008080;">54</span> }</pre>
-</div>
-<p>&nbsp;</p>
-<p>试试：</p>
-<p><img src="http://images.cnitblog.com/i/637236/201408/041242148342852.png" alt="" /></p>
-<p>&nbsp;</p></div><div id="MySignature"></div>
-<div class="clear"></div>
-<div id="blog_post_info_block">
-<div id="BlogPostCategory"></div>
-<div id="EntryTag"></div>
-<div id="blog_post_info">
-</div>
-<div class="clear"></div>
-<div id="post_next_prev"></div>
-</div>
+四、分割
 
-</body>
-</html>
+这个时候，我们就需要对单一数字字母进行操作了，我们先将数字提取出来。
+
+有些验证码字符相连，特别难!!!
+
+我们分别从左到右，从右到左，从上到下，从下到上，进行扫描，去除白点，找到边框。
+
+ 1 /*
+ 2  *归一化处理,针对一个个的数字,即去除字符周围的白点
+ 3  *@param $singleArray 二值化数组
+ 4  */
+ 5 function getJinsuo($singleArray){
+ 6     $dianCount = 0;
+ 7     $rearr = array();
+ 8     
+ 9     $gao = count($singleArray);
+10     $kuan = count($singleArray['0']);
+11     
+12     $dianCount = 0;
+13     $shangKuang = 0;
+14     $xiaKuang = 0;
+15     $zuoKuang = 0;
+16     $youKuang = 0;
+17     //从上到下扫描
+18     for($i=0; $i < $gao; ++$i){
+19         for($j=0; $j < $kuan; ++$j){
+20             if( $singleArray[$i][$j] == 1){
+21                 $dianCount++;
+22             }
+23         }
+24         if($dianCount>1){
+25             $shangKuang = $i;
+26             $dianCount = 0;
+27             break;
+28         }
+29     }
+30     //从下到上扫描
+31     for($i=$gao-1; $i > -1; $i--){
+32         for($j=0; $j < $kuan; ++$j){
+33             if( $singleArray[$i][$j] == 1){
+34                 $dianCount++;
+35             }
+36         }
+37         if($dianCount>1){
+38             $xiaKuang = $i;
+39             $dianCount = 0;
+40             break;
+41         }
+42     }
+43     //从左到右扫描
+44     for($i=0; $i < $kuan; ++$i){
+45         for($j=0; $j < $gao; ++$j){
+46             if( $singleArray[$j][$i] == 1){
+47                 $dianCount++;
+48             }
+49         }
+50         if($dianCount>1){
+51             $zuoKuang = $i;
+52             $dianCount = 0;
+53             break;
+54         }
+55     }
+56     //从右到左扫描
+57     for($i=$kuan-1; $i > -1; --$i){
+58         for($j=0; $j < $gao; ++$j){
+59             if( $singleArray[$j][$i] == 1){
+60                 $dianCount++;
+61             }
+62         }
+63         if($dianCount>1){
+64             $youKuang = $i;
+65             $dianCount = 0;
+66             break;
+67         }
+68     }
+69     for($i=0;$i<$xiaKuang-$shangKuang+1;$i++){
+70         for($j=0;$j<$youKuang-$zuoKuang+1;$j++){
+71             $rearr[$i][$j] = $singleArray[$shangKuang+$i][$zuoKuang+$j];
+72         }
+73     }
+74     return $rearr;
+75 }
+ 
+
+ 
+
+然后从左到右扫描，找到字符的分割
+
+返回三维数组，每一维就是一个字符。
+
+ 1 /*
+ 2  *切割成三维数组，每个小数字在一个数组里面
+ 3  *只适用四个数字一起的数组
+ 4  *@param 经过归一化处理的二值化数组
+ 5  */
+ 6 function cutSmall($erzhiArray){
+ 7     $doubleArray = array();
+ 8     $jieZouyou = array();
+ 9     
+10     $gao = count($erzhiArray);
+11     $kuan = count($erzhiArray['0']);
+12     
+13     $jie = 0;
+14     $s = 0;
+15     $jieZouyou[$s] = 0;
+16     $s++;
+17     //从左到右扫描
+18     
+19     for($i=0; $i < $kuan;){
+20         for($j=0; $j < $gao; ++$j){
+21             $jie = $jie + $erzhiArray[$j][$i];
+22         }
+23         //如果有一列全部是白，设置$jieZouyou,并且跳过中间空白部分
+24         if($jie == 0){
+25             $jieZouyou[$s] = $i+1;
+26             do{
+27                 $n = ++$i;
+28                 $qian = 0;
+29                 $hou = 0;
+30                 for($m=0; $m < $gao; ++$m){
+31                     $qian = $qian + $erzhiArray[$m][$n];
+32                     $hou = $hou + $erzhiArray[$m][$n+1];                        
+33                 }
+34                 $jieZouyou[$s+1] = $n+1;
+35             }
+36             //当有两列同时全部为白，说明有间隙，循环，知道间隙没有了
+37             while($qian == 0 && $hou == 0);
+38             $s+=2;
+39             $i++;
+40         }else{
+41             $i++;    
+42         }
+43         
+44         $jie = 0;
+45     }
+46     $jieZouyou[] = $kuan;
+47     //极端节点数量，(应该是字符个数)*2
+48     $jieZouyouCount = count($jieZouyou);
+49     
+50     for($k=0;$k<$jieZouyouCount/2;$k++){
+51         for($i=0; $i < $gao; $i++){
+52             for($j=0; $j < $jieZouyou[$k*2+1]-$jieZouyou[$k*2]-1; ++$j){
+53                 $doubleArray[$k][$i][$j] = $erzhiArray[$i][$j+$jieZouyou[$k*2]];
+54             }
+55         }
+56         
+57     }
+58     return $doubleArray;
+59 }
+
+
+ 
+
+五、倾斜调整
+
+我们发现第三个9有一点倾斜，
+
+我们需要将倾斜的图片“正”过来
+
+人怎么处理的呢，先眼睛观察“倾斜了多少度”，然后把图片扭过来多少度，并且观察->负反馈->大脑传递扭转角度时刻在发生，最后图片就“正”过来了。
+
+人是怎么观察“倾斜”的，以上面的“2”做例子，可能是右上方（左下方）的黑色比左上方（右下方）的多？
+
+我们建立X轴正向向下，Y轴向右的直角坐标系
+
+我们计算每一层的黑点的分布中点坐标，得到一系列离散点，计算这些点所在的直线（线性回归方程的计算，），公式y = b*x+a，
+
+
+
+竟然有用到这个公式的一天！！！
+
+大概就是一条倾斜的直线了，通过直线计算直线倾斜角度，然后转这么多的角度，图片应该就“正”了吧。
+
+其中a,b的计算如下
+
+ 1 /*
+ 2  *定义求线性回归A和B的函数
+ 3  *@param $zuobiaoArray坐标的三维数组
+ 4  */
+ 5 function getHuigui($zuobiaoArray){
+ 6     $y8 = 0;
+ 7     $x8 = 0;
+ 8     $x2 = 0;
+ 9     $xy = 0;
+10     $geshu = count($zuobiaoArray);
+11     for($i=0;$i<$geshu;$i++){
+12         $y8 = $y8+$zuobiaoArray[$i]['y'];
+13         $x8 = $x8+$zuobiaoArray[$i]['x'];
+14         $xy = $xy+$zuobiaoArray[$i]['y']*$zuobiaoArray[$i]['x'];
+15         $x2 = $x2 + $zuobiaoArray[$i]['x']*$zuobiaoArray[$i]['x'];;
+16     }
+17     $y8 = $y8/$geshu;
+18     $x8 = $x8/$geshu;
+19     
+20     $b = ($xy-$geshu*$y8*$x8)/($x2-$geshu*$x8*$x8);
+21     $a = $y8-$b*$x8;
+22     $re['a'] = $a;
+23     $re['b'] = $b;
+24     return $re;
+25     //y = b * x + a
+26 }
+ 
+
+怎么转角？
+
+1、可以直接对图片进行操作，但是发现有比较大的失真，就没有继续了。
+2、或者，对黑点白点的坐标进行操作……
+这就是三角函数了，好长时间不碰三角函数，都差点忘记了。
+
+定义函数
+
+ 1 /*
+ 2  *定义转化坐标的函数
+ 3  *@param $x x坐标即$i
+ 4  *@param $y y坐标，即j
+ 5  *@param $b 线性回归方程的b参数 
+ 6  */ 
+ 7 function getNewZuobiao($x,$y,$b){
+ 8     if($x == 0){
+ 9         if($y>0){
+10             $xianJiao = M_PI/2;
+11         }elseif($y<0){
+12             $xianJiao = -M_PI/2;
+13         }else{
+14             $p['x'] = 0;
+15             $p['y'] = 0;
+16             return $p;
+17         }
+18     }else{
+19         $xianJiao = atan($y/$x);    
+20     }
+21     $jiao =$xianJiao-atan($b);
+22     $chang = sqrt($x*$x+$y*$y);
+23     $p['x'] = $chang*cos($jiao);
+24     $p['y'] = $chang*sin($jiao);
+25     return $p;
+26 }
+ 
+
+转角吧
+
+ 
+
+ 1 /*
+ 2  *对【单个】数字的二值化二维数组进行倾斜调整
+ 3  *@param  $singleArray  高*宽的二值数组（0,1）
+ 4  */
+ 5 function singleSlopeAdjust($singleErzhiArray){
+ 6     $slopeArray = array();
+ 7     $gao = count($singleErzhiArray);
+ 8     $chang = count($singleErzhiArray['0']);
+ 9     
+10     //初始化$slopeArray
+11     for($i=0;$i<$gao*4;$i++){
+12         for($j=0;$j<$chang*4;$j++){
+13             $slopeArray[$i][$j] = 0;
+14         }
+15     }
+16     
+17     //初始化中心坐标(是数组的下标)
+18     $centerXfoalt = ($gao-1)/2;
+19     $centerYfoalt = ($chang-1)/2;
+20     $centerX = ceil($centerXfoalt);
+21     $centerY = ceil($centerYfoalt);
+22     
+23     //初始化图片倾斜诶角度
+24     /*斜率的计算！！！！！，回归方程*/
+25     //从上到下扫描，计算中点，求得一串坐标（$i,$ava）
+26     for($i=0;$i<$gao;$i++){
+27         $Num = 0;
+28         $Amount = 0;
+29         for($j=0;$j<$chang;$j++){
+30             if($singleErzhiArray[$i][$j] == 1){
+31                 $Num = $Num+$j;
+32                 $Amount++;
+33             }
+34         }
+35         if($Amount == 0){
+36             $Ava[$i] = $chang/2;    
+37         }else{
+38             $Ava[$i] = $Num/$Amount;
+39         }
+40     }
+41 
+42     
+43     //计算线性回归方程的b与a
+44     $zuo = array();
+45     for($j=0;$j<count($Ava);$j++){
+46         $zuo[$j]['x'] = $j;
+47         $zuo[$j]['y'] = $Ava[$j];
+48     }
+49     $res = $this->getHuigui($zuo);
+50     $zuoB = $res['b'];
+51 
+52     
+53     for($i=0;$i<$gao;$i++){
+54         for($j=0;$j<$chang;$j++){
+55             if($singleErzhiArray[$i][$j] == 1){
+56                 $splodeZuobiao = $this->getNewZuobiao($i,$j,$zuoB);
+57                 $splodeX = $splodeZuobiao['x'];
+58                 $splodeY = $splodeZuobiao['y'];
+59                 $slopeArray[$splodeX+$gao][$splodeY+$chang] = 1;
+60             }
+61         }
+62     }
+63     
+64     //将预处理的数组空白清理
+65     $slopeArray = $this->getJinsuo($slopeArray);
+66     return $slopeArray;
+67 }
+
+
+看到正了一些
+
+ 
+
+六、统一大小
+
+上文中因为各种操作，每个字符大小不一，我们需要统一大小
+
+ 
+
+七、特征值的建立
+
+有很多方法
+
+1、逐像素特征提取法 
+这是一种最简单的特征提取方法。它可以对图像进行逐行逐列的扫描，当遇到黑色像素时取其特征值为1，遇到白色像素时取其特征值为0，这样当扫描结束后就获得一个维数与图像中的像素点的个数相同的特征向量矩阵。 
+这种方法提取的信息量最大，但是它的缺点也很明显，就是适应性不强。
+
+2、骨架特征提取法 
+两幅图像由于它们的线条的粗细不同，使得两幅图像差别很大，但是将它们的线条进行细化后，统一到相同的宽度，如一个像素宽时，这是两幅图像的差距就不那么明显。利用图形的骨架作为特征来进行数码识别，就使得识别有了一定的适应性。一般使用细化的方法来提取骨架，细化的算法有很多，如Hilditch算法、Rosenfeld算法等。对经过细化的图像利用EveryPixel函数进行处理就可以得到细化后图像的特征向量矩阵。骨架特征提取的方法对于线条粗细不同的数码有一定的适应性，但是图像一旦出现偏移就难以识别。
+
+3、微结构法 
+微结构法将图像分为几个小块，统计每个小块的像素分布。本文提取出汉字的39个特征，存储在数组f[0]～f[38]中。具体算法可分为四步：
+
+
+
+ 步骤一：把字符平均分成9份，如图4.1所示，给每一份编号如图4.2，统计每一份内黑色像素的个数，存储在数字tz[0]～tz[9]中，统计在行方向和列方向上每一份内的黑色像素个数和与之相邻的一份内黑色像素个数的比值作为一个特征，例如：行方向上提取特征f[0]＝tz[1]/ tz[0]，f[1]＝tz[2]/ tz[1]，f[2]＝tz[0]/ tz[2]，…,f[8]＝tz[6]/ tz[8]；列方向上f[9]＝tz[3]/ tz[0]，f[10]＝tz[6]/ tz[3]，f[11]＝tz[0]/ tz[6]，…，f[17]＝tz[2]/ tz[8]，共18个特征。
+
+步骤二：把字符横向分成三份，如图4.3所示，统计每一份内的黑色像素个数，每一份内的黑色像素个数与前一份内黑色像素个数的比值作为一个特征，f[18]＝tz[10]/ tz[9]，f[19]＝tz[11]/ tz[10]，f[20]＝tz[9]/ tz[11]；把字符纵向分成三份，如图4.4所示，统计每一份内的黑色像素个数，每一份内的黑色像素个数与前一份内黑色像素个数的比值作为一个特征，f[21]＝tz[13]/ tz[12]，f[22]＝tz[14]/ tz[13]，f[23]＝tz[12]/ tz[14]；共六个特征。
+
+步骤三：如图4.5，在竖直方向上找出三列，统计在该列中跳变点的个数，即相邻点像素值从0变到255的次数，共三个特征，记为f[24]，f[25]，f[26]；在水平方向上找出三行列，统计在该行中跳变点的个数，即相邻点象素值从0变到255的次数，共三个特征，记为f[27]，f[28]，f[29]。
+
+
+
+图4.5
+
+步骤四：把每一份内黑色象素的个数tz[0]～tz[9]，作为9个特征，记为：f[30]～f[38]。
+
+这样得到汉字的共39个特征，根据这些特征就可以区分每个车牌汉字，进行识别。
+
+ 
+
+ 
+
+我们使用最简单的逐像素特征提取法。
+
+多多增加数据库，识别率会增加的
+
+ 
+
+八、识别验证码
+
+对于一个新的验证码，进行上文操作，然后对比数据库就可以了
+
+ 1 /*
+ 2  *进行匹配
+ 3  *@param  $Image  图片路径
+ 4  */
+ 5 public function run($Image){
+ 6     $data = array('','','','');
+ 7     $result="";
+ 8     $bilu = '';
+ 9     $maxarr = '';
+10     
+11     //提取特征
+12     $this->prepare($Image);
+13     $yuanshi = $this->getErzhi();
+14     $yijijiangzao = $this->reduceZao($yuanshi);
+15     $small = $this->cutSmall($yijijiangzao);
+16     for($k=0;$k<4;$k++){
+17         $tianchong = $this->tianChong($small[$k]);
+18         $tiaozhenjiaodu = $this->singleSlopeAdjust($tianchong);
+19         $tongyidaxiao = $this->tongyiDaxiao($tiaozhenjiaodu);
+20         for($i=0;$i<20;$i++){
+21             for($j=0;$j<20;$j++){
+22                 $data[$k] .= $tongyidaxiao[$i][$j];    
+23             }    
+24         }
+25     }
+26 
+27     // 进行关键字匹配
+28     foreach($data as $numKey => $numString)
+29     {
+30 
+31         $max = 0;
+32         $num = 0;
+33         foreach($this->Keys as $value => $key)
+34         {
+35             similar_text($value, $numString,$percent);
+36             if($percent > $max)
+37             {
+38                 $max = $percent;
+39                 $num = $key;
+40                 $zim = $value;
+41             }
+42             if($max>95){
+43                 break;
+44             }
+45         }
+46         $result .=$num;
+47         $maxarr[] = $max;
+48     }
+49     // 查找最佳匹配数字
+50     $re = $maxarr;
+51     $re[] = $result;
+52     return $re;
+53     //return $result.'|max|一:'.$maxarr['0'].'|二:'.$maxarr['1'].'|三:'.$maxarr['2'].'|四:'.$maxarr['3'];
+54 }
+ 
+
+试试：
+
